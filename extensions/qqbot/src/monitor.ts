@@ -1,7 +1,7 @@
 /**
  * QQ Bot WebSocket 网关连接管理
+ * 支持多账户并发连接
  */
-
 import WebSocket from "ws";
 import { createLogger, type Logger } from "./logger.js";
 import { handleQQBotDispatch } from "./bot.js";
@@ -40,10 +40,76 @@ const DEFAULT_INTENTS =
 
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 20000, 30000];
 
-let activeSocket: WebSocket | null = null;
-let activeAccountId: string | null = null;
-let activePromise: Promise<void> | null = null;
-let activeStop: (() => void) | null = null;
+/**
+ * 活动连接状态（每个账户独立）
+ */
+interface ActiveConnection {
+  socket: WebSocket | null;
+  promise: Promise<void> | null;
+  stop: (() => void) | null;
+  sessionId: string | null;
+  lastSeq: number | null;
+  heartbeatTimer: ReturnType<typeof setInterval> | null;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+  reconnectAttempt: number;
+  connecting: boolean;
+}
+
+// 按账户 ID 管理的连接映射
+const activeConnections = new Map<string, ActiveConnection>();
+
+/**
+ * 获取或创建账户的连接状态
+ */
+function getOrCreateConnection(accountId: string): ActiveConnection {
+  let conn = activeConnections.get(accountId);
+  if (!conn) {
+    conn = {
+      socket: null,
+      promise: null,
+      stop: null,
+      sessionId: null,
+      lastSeq: null,
+      heartbeatTimer: null,
+      reconnectTimer: null,
+      reconnectAttempt: 0,
+      connecting: false,
+    };
+    activeConnections.set(accountId, conn);
+  }
+  return conn;
+}
+
+/**
+ * 清理账户的定时器
+ */
+function clearTimers(conn: ActiveConnection): void {
+  if (conn.heartbeatTimer) {
+    clearInterval(conn.heartbeatTimer);
+    conn.heartbeatTimer = null;
+  }
+  if (conn.reconnectTimer) {
+    clearTimeout(conn.reconnectTimer);
+    conn.reconnectTimer = null;
+  }
+}
+
+/**
+ * 清理账户的 WebSocket
+ */
+function cleanupSocket(conn: ActiveConnection): void {
+  clearTimers(conn);
+  if (conn.socket) {
+    try {
+      if (conn.socket.readyState === WebSocket.OPEN) {
+        conn.socket.close();
+      }
+    } catch {
+      // ignore
+    }
+    conn.socket = null;
+  }
+}
 
 export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise<void> {
   const { config, runtime, abortSignal, accountId = DEFAULT_ACCOUNT_ID } = opts;
@@ -52,14 +118,14 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
     error: runtime?.error,
   });
 
-  if (activeSocket) {
-    if (activeAccountId && activeAccountId !== accountId) {
-      throw new Error(`QQBot already running for account ${activeAccountId}`);
+  const conn = getOrCreateConnection(accountId);
+
+  // 如果该账户已有活动连接，返回现有 promise
+  if (conn.socket) {
+    if (conn.promise) {
+      return conn.promise;
     }
-    if (activePromise) {
-      return activePromise;
-    }
-    throw new Error("QQBot monitor state invalid: active socket without promise");
+    throw new Error(`QQBot monitor state invalid for account ${accountId}: active socket without promise`);
   }
 
   const qqCfg = config ? mergeQQBotAccountConfig(config, accountId) : undefined;
@@ -71,48 +137,20 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
     throw new Error(`QQBot not configured for account ${accountId} (missing appId or clientSecret)`);
   }
 
-  activePromise = new Promise<void>((resolve, reject) => {
+  conn.promise = new Promise<void>((resolve, reject) => {
     let stopped = false;
-    let reconnectAttempt = 0;
-    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let sessionId: string | null = null;
-    let lastSeq: number | null = null;
-    let connecting = false;
-
-    const clearTimers = () => {
-      if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
-        heartbeatTimer = null;
-      }
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-    };
-
-    const cleanupSocket = () => {
-      clearTimers();
-      if (activeSocket) {
-        try {
-          if (activeSocket.readyState === WebSocket.OPEN) {
-            activeSocket.close();
-          }
-        } catch {
-          // ignore
-        }
-      }
-      activeSocket = null;
-    };
 
     const finish = (err?: unknown) => {
       if (stopped) return;
       stopped = true;
       abortSignal?.removeEventListener("abort", onAbort);
-      cleanupSocket();
-      activeAccountId = null;
-      activePromise = null;
-      activeStop = null;
+      cleanupSocket(conn);
+      conn.sessionId = null;
+      conn.lastSeq = null;
+      conn.promise = null;
+      conn.stop = null;
+      conn.reconnectAttempt = 0;
+      activeConnections.delete(accountId);
       if (err) {
         reject(err);
       } else {
@@ -125,37 +163,37 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
       finish();
     };
 
-    activeStop = () => {
+    conn.stop = () => {
       logger.info("stop requested");
       finish();
     };
 
     const scheduleReconnect = (reason: string) => {
       if (stopped) return;
-      if (reconnectTimer) return;
+      if (conn.reconnectTimer) return;
       const delay =
-        RECONNECT_DELAYS_MS[Math.min(reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
-      reconnectAttempt += 1;
+        RECONNECT_DELAYS_MS[Math.min(conn.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
+      conn.reconnectAttempt += 1;
       logger.warn(`[reconnect] ${reason}; retry in ${delay}ms`);
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
+      conn.reconnectTimer = setTimeout(() => {
+        conn.reconnectTimer = null;
         void connect();
       }, delay);
     };
 
     const startHeartbeat = (intervalMs: number) => {
-      if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
+      if (conn.heartbeatTimer) {
+        clearInterval(conn.heartbeatTimer);
       }
-      heartbeatTimer = setInterval(() => {
-        if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) return;
-        const payload = JSON.stringify({ op: 1, d: lastSeq });
-        activeSocket.send(payload);
+      conn.heartbeatTimer = setInterval(() => {
+        if (!conn.socket || conn.socket.readyState !== WebSocket.OPEN) return;
+        const payload = JSON.stringify({ op: 1, d: conn.lastSeq });
+        conn.socket.send(payload);
       }, intervalMs);
     };
 
     const sendIdentify = (token: string) => {
-      if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) return;
+      if (!conn.socket || conn.socket.readyState !== WebSocket.OPEN) return;
       const payload = {
         op: 2,
         d: {
@@ -164,11 +202,11 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
           shard: [0, 1],
         },
       };
-      activeSocket.send(JSON.stringify(payload));
+      conn.socket.send(JSON.stringify(payload));
     };
 
     const sendResume = (token: string, session: string, seq: number) => {
-      if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) return;
+      if (!conn.socket || conn.socket.readyState !== WebSocket.OPEN) return;
       const payload = {
         op: 6,
         d: {
@@ -177,12 +215,12 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
           seq,
         },
       };
-      activeSocket.send(JSON.stringify(payload));
+      conn.socket.send(JSON.stringify(payload));
     };
 
     const handleGatewayPayload = async (payload: GatewayPayload) => {
       if (typeof payload.s === "number") {
-        lastSeq = payload.s;
+        conn.lastSeq = payload.s;
       }
 
       switch (payload.op) {
@@ -192,8 +230,8 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
           startHeartbeat(interval);
 
           const token = await getAccessToken(qqCfg.appId as string, qqCfg.clientSecret as string);
-          if (sessionId && typeof lastSeq === "number") {
-            sendResume(token, sessionId, lastSeq);
+          if (conn.sessionId && typeof conn.lastSeq === "number") {
+            sendResume(token, conn.sessionId, conn.lastSeq);
           } else {
             sendIdentify(token);
           }
@@ -202,14 +240,14 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
         case 11:
           return;
         case 7:
-          cleanupSocket();
+          cleanupSocket(conn);
           scheduleReconnect("server requested reconnect");
           return;
         case 9:
-          sessionId = null;
-          lastSeq = null;
+          conn.sessionId = null;
+          conn.lastSeq = null;
           clearTokenCache();
-          cleanupSocket();
+          cleanupSocket(conn);
           scheduleReconnect("invalid session");
           return;
         case 0: {
@@ -217,14 +255,14 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
           if (eventType === "READY") {
             const ready = payload.d as { session_id?: string } | undefined;
             if (ready?.session_id) {
-              sessionId = ready.session_id;
+              conn.sessionId = ready.session_id;
             }
-            reconnectAttempt = 0;
+            conn.reconnectAttempt = 0;
             logger.info("gateway ready");
             return;
           }
           if (eventType === "RESUMED") {
-            reconnectAttempt = 0;
+            conn.reconnectAttempt = 0;
             logger.info("gateway resumed");
             return;
           }
@@ -245,18 +283,17 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
     };
 
     const connect = async () => {
-      if (stopped || connecting) return;
-      connecting = true;
+      if (stopped || conn.connecting) return;
+      conn.connecting = true;
 
       try {
-        cleanupSocket();
+        cleanupSocket(conn);
         const token = await getAccessToken(qqCfg.appId as string, qqCfg.clientSecret as string);
         const gatewayUrl = await getGatewayUrl(token);
         logger.info(`connecting gateway: ${gatewayUrl}`);
 
         const ws = new WebSocket(gatewayUrl);
-        activeSocket = ws;
-        activeAccountId = accountId;
+        conn.socket = ws;
 
         ws.on("open", () => {
           logger.info("gateway socket opened");
@@ -278,7 +315,7 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
 
         ws.on("close", (code, reason) => {
           logger.warn(`gateway socket closed (${code}) ${String(reason)}`);
-          cleanupSocket();
+          cleanupSocket(conn);
           scheduleReconnect("socket closed");
         });
 
@@ -287,10 +324,10 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
         });
       } catch (err) {
         logger.error(`gateway connect failed: ${String(err)}`);
-        cleanupSocket();
+        cleanupSocket(conn);
         scheduleReconnect("connect failed");
       } finally {
-        connecting = false;
+        conn.connecting = false;
       }
     };
 
@@ -303,27 +340,60 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
     void connect();
   });
 
-  return activePromise;
+  return conn.promise;
 }
 
-export function stopQQBotMonitor(): void {
-  if (activeStop) {
-    activeStop();
+/**
+ * 停止指定账户的连接
+ */
+export function stopQQBotMonitorForAccount(accountId: string = DEFAULT_ACCOUNT_ID): void {
+  const conn = activeConnections.get(accountId);
+  if (!conn) return;
+
+  if (conn.stop) {
+    conn.stop();
     return;
   }
-  if (activeSocket) {
-    try {
-      activeSocket.close();
-    } catch {
-      // ignore
-    }
-    activeSocket = null;
-    activeAccountId = null;
-    activePromise = null;
-    activeStop = null;
+
+  cleanupSocket(conn);
+  activeConnections.delete(accountId);
+}
+
+/**
+ * 停止所有账户的连接
+ */
+export function stopAllQQBotMonitors(): void {
+  for (const accountId of activeConnections.keys()) {
+    stopQQBotMonitorForAccount(accountId);
   }
 }
 
+/**
+ * @deprecated 使用 stopQQBotMonitorForAccount 或 stopAllQQBotMonitors
+ * 为了向后兼容，停止默认账户
+ */
+export function stopQQBotMonitor(): void {
+  stopQQBotMonitorForAccount(DEFAULT_ACCOUNT_ID);
+}
+
+/**
+ * 检查指定账户是否有活动连接
+ */
+export function isQQBotMonitorActiveForAccount(accountId: string = DEFAULT_ACCOUNT_ID): boolean {
+  const conn = activeConnections.get(accountId);
+  return conn?.socket !== null;
+}
+
+/**
+ * @deprecated 使用 isQQBotMonitorActiveForAccount
+ */
 export function isQQBotMonitorActive(): boolean {
-  return activeSocket !== null;
+  return isQQBotMonitorActiveForAccount(DEFAULT_ACCOUNT_ID);
+}
+
+/**
+ * 获取所有活动账户 ID
+ */
+export function getActiveAccountIds(): string[] {
+  return Array.from(activeConnections.keys());
 }

@@ -15,7 +15,7 @@ import {
   type PluginConfig,
 } from "./config.js";
 import { qqbotOutbound } from "./outbound.js";
-import { monitorQQBotProvider, stopQQBotMonitor } from "./monitor.js";
+import { monitorQQBotProvider, stopQQBotMonitorForAccount } from "./monitor.js";
 import { setQQBotRuntime } from "./runtime.js";
 
 
@@ -366,9 +366,10 @@ export const qqbotPlugin = {
         accountId: ctx.accountId,
       });
     },
-    stopAccount: async (_ctx: { accountId: string }): Promise<void> => {
-      stopQQBotMonitor();
+    stopAccount: async (ctx: { accountId: string }): Promise<void> => {
+      stopQQBotMonitorForAccount(ctx.accountId);
     },
+
     getStatus: () => ({ connected: true }),
   },
 };
