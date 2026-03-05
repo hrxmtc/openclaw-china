@@ -562,9 +562,10 @@ flowchart TD
 
 **欢迎同学们一起开发~**
 
+<img src="https://github.com/user-attachments/assets/c3d7115b-b561-49ef-9f8e-1787c00ba6d8" alt="二维码" width="50%" />
+
 <img src="https://github.com/user-attachments/assets/ecbae9f1-7780-41ed-9e92-c6aa489ba20e" alt="二维码" width="50%" />
 
-<img src="doc\images\image-20260228224811649.png" alt="二维码" width="50%" />
 
 
 如果二维码过期，可以加下我微信备注说明来意：a28417416
