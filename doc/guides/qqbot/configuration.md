@@ -118,6 +118,7 @@ openclaw config set channels.qqbot.groupPolicy open
 openclaw config set channels.qqbot.requireMention true
 openclaw config set channels.qqbot.textChunkLimit 1500
 openclaw config set channels.qqbot.replyFinalOnly false
+openclaw config set channels.qqbot.longTaskNoticeDelayMs 30000
 openclaw config set gateway.http.endpoints.chatCompletions.enabled true
 ```
 
@@ -135,6 +136,7 @@ openclaw config set gateway.http.endpoints.chatCompletions.enabled true
 | groupAllowFrom | string[] | [] | 群聊白名单 |
 | textChunkLimit | number | 1500 | 文本分块长度 |
 | replyFinalOnly | boolean | false | 是否仅发送最终回复文本（不会阻断媒体工具结果，如 TTS 语音） |
+| longTaskNoticeDelayMs | number | 30000 | 首条正式回复超过该时长仍未发送时，自动补发“任务处理时间较长，请稍等，我还在继续处理。”；设为 `0` 可关闭 |
 
 ### 3. 多账户配置
 

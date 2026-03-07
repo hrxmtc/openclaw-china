@@ -4,6 +4,7 @@ import {
   evaluateReplyFinalOnlyDelivery,
   sanitizeQQBotOutboundText,
   sendQQBotMediaWithFallback,
+  startLongTaskNoticeTimer,
 } from "./bot.js";
 
 describe("evaluateReplyFinalOnlyDelivery", () => {
@@ -78,5 +79,88 @@ describe("sendQQBotMediaWithFallback", () => {
     expect(sendText).toHaveBeenCalledTimes(1);
     expect(sendText.mock.calls[0]?.[0]?.text).toContain("https://example.com/a.mp3");
     expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("sendMedia failed"));
+  });
+
+  it("marks delivery when media fallback text succeeds", async () => {
+    const sendMedia = vi.fn().mockResolvedValue({ channel: "qqbot", error: "upload failed" });
+    const sendText = vi.fn().mockResolvedValue({ channel: "qqbot", messageId: "m1", timestamp: 1 });
+    const onDelivered = vi.fn();
+    const logger = {
+      error: vi.fn(),
+      warn: vi.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+    } as unknown as Logger;
+
+    await sendQQBotMediaWithFallback({
+      qqCfg: {},
+      to: "user:123",
+      mediaQueue: ["https://example.com/a.mp3"],
+      replyToId: "reply-1",
+      logger,
+      onDelivered,
+      outbound: { sendMedia, sendText },
+    });
+
+    expect(onDelivered).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("startLongTaskNoticeTimer", () => {
+  it("sends notice after configured delay", async () => {
+    vi.useFakeTimers();
+    const sendNotice = vi.fn().mockResolvedValue(undefined);
+    const logger = { warn: vi.fn() } as unknown as Logger;
+
+    startLongTaskNoticeTimer({
+      delayMs: 30000,
+      logger,
+      sendNotice,
+    });
+
+    await vi.advanceTimersByTimeAsync(29999);
+    expect(sendNotice).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sendNotice).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
+
+  it("cancels notice once a real reply is delivered", async () => {
+    vi.useFakeTimers();
+    const sendNotice = vi.fn().mockResolvedValue(undefined);
+    const logger = { warn: vi.fn() } as unknown as Logger;
+
+    const timer = startLongTaskNoticeTimer({
+      delayMs: 30000,
+      logger,
+      sendNotice,
+    });
+
+    await vi.advanceTimersByTimeAsync(10000);
+    timer.markReplyDelivered();
+    await vi.advanceTimersByTimeAsync(20000);
+
+    expect(sendNotice).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+
+  it("treats zero delay as disabled", async () => {
+    vi.useFakeTimers();
+    const sendNotice = vi.fn().mockResolvedValue(undefined);
+    const logger = { warn: vi.fn() } as unknown as Logger;
+
+    startLongTaskNoticeTimer({
+      delayMs: 0,
+      logger,
+      sendNotice,
+    });
+
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(sendNotice).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 });

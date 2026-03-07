@@ -30,6 +30,7 @@
       "historyLimit": { "type": "integer", "minimum": 0 },
       "textChunkLimit": { "type": "integer", "minimum": 1 },
       "replyFinalOnly": { "type": "boolean" },
+      "longTaskNoticeDelayMs": { "type": "integer", "minimum": 0 },
       "maxFileSizeMB": { "type": "number", "exclusiveMinimum": 0 },
       "mediaTimeoutMs": { "type": "integer", "minimum": 1 }
     }

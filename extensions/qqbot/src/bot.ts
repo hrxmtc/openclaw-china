@@ -121,6 +121,55 @@ type ResolvedInboundAttachmentResult = {
 const VOICE_ASR_FALLBACK_TEXT = "当前语音功能未启动或识别失败，请稍后重试。";
 const VOICE_EXTENSIONS = [".silk", ".amr", ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".speex"];
 const VOICE_ASR_ERROR_MAX_LENGTH = 500;
+export const LONG_TASK_NOTICE_TEXT = "任务处理时间较长，请稍等，我还在继续处理。";
+export const DEFAULT_LONG_TASK_NOTICE_DELAY_MS = 30000;
+
+type LongTaskNoticeController = {
+  markReplyDelivered: () => void;
+  dispose: () => void;
+};
+
+export function startLongTaskNoticeTimer(params: {
+  delayMs: number;
+  logger: Pick<Logger, "warn">;
+  sendNotice: () => Promise<void>;
+}): LongTaskNoticeController {
+  const { delayMs, logger, sendNotice } = params;
+  let completed = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const clear = () => {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = null;
+  };
+
+  if (delayMs > 0) {
+    timer = setTimeout(() => {
+      if (completed) return;
+      completed = true;
+      timer = null;
+      void sendNotice().catch((err) => {
+        logger.warn(`send long-task notice failed: ${String(err)}`);
+      });
+    }, delayMs);
+    timer.unref?.();
+  } else {
+    completed = true;
+  }
+
+  return {
+    markReplyDelivered: () => {
+      if (completed) return;
+      completed = true;
+      clear();
+    },
+    dispose: () => {
+      completed = true;
+      clear();
+    },
+  };
+}
 
 function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
@@ -641,9 +690,10 @@ export async function sendQQBotMediaWithFallback(params: {
   replyToId?: string;
   replyEventId?: string;
   logger: Logger;
+  onDelivered?: () => void;
   outbound?: Pick<typeof qqbotOutbound, "sendMedia" | "sendText">;
 }): Promise<void> {
-  const { qqCfg, to, mediaQueue, replyToId, replyEventId, logger } = params;
+  const { qqCfg, to, mediaQueue, replyToId, replyEventId, logger, onDelivered } = params;
   const outbound = params.outbound ?? qqbotOutbound;
   for (const mediaUrl of mediaQueue) {
     const result = await outbound.sendMedia({
@@ -665,7 +715,11 @@ export async function sendQQBotMediaWithFallback(params: {
       });
       if (fallbackResult.error) {
         logger.error(`sendText fallback failed: ${fallbackResult.error}`);
+      } else {
+        onDelivered?.();
       }
+    } else {
+      onDelivered?.();
     }
   }
 }
@@ -754,297 +808,323 @@ async function dispatchToAgent(params: {
     return;
   }
 
-  const sessionApi = runtime.channel?.session;
-  const storePath = sessionApi?.resolveStorePath?.(
-    (cfg as Record<string, unknown>)?.session?.store,
-    { agentId: route.agentId }
-  );
-
-  const envelopeOptions = replyApi.resolveEnvelopeFormatOptions?.(cfg);
-  const previousTimestamp =
-    storePath && sessionApi?.readSessionUpdatedAt
-      ? sessionApi.readSessionUpdatedAt({ storePath, sessionKey: route.sessionKey })
-      : null;
-  const resolvedAttachmentResult = await resolveInboundAttachmentsForAgent({
-    attachments: inbound.attachments,
-    qqCfg,
+  const longTaskNotice = startLongTaskNoticeTimer({
+    delayMs: qqCfg.longTaskNoticeDelayMs ?? DEFAULT_LONG_TASK_NOTICE_DELAY_MS,
     logger,
+    sendNotice: async () => {
+      const result = await qqbotOutbound.sendText({
+        cfg: { channels: { qqbot: qqCfg } },
+        to: target.to,
+        text: LONG_TASK_NOTICE_TEXT,
+        replyToId: inbound.messageId,
+        replyEventId: inbound.eventId,
+      });
+      if (result.error) {
+        logger.warn(`send long-task notice failed: ${result.error}`);
+      }
+    },
   });
-  if (
-    qqCfg.asr?.enabled &&
-    resolvedAttachmentResult.hasVoiceAttachment &&
-    !resolvedAttachmentResult.hasVoiceTranscript
-  ) {
-    const fallback = await qqbotOutbound.sendText({
-      cfg: { channels: { qqbot: qqCfg } },
-      to: target.to,
-      text: buildVoiceASRFallbackReply(resolvedAttachmentResult.asrErrorMessage),
-      replyToId: inbound.messageId,
-      replyEventId: inbound.eventId,
+
+  try {
+    const sessionApi = runtime.channel?.session;
+    const storePath = sessionApi?.resolveStorePath?.(
+      (cfg as Record<string, unknown>)?.session?.store,
+      { agentId: route.agentId }
+    );
+
+    const envelopeOptions = replyApi.resolveEnvelopeFormatOptions?.(cfg);
+    const previousTimestamp =
+      storePath && sessionApi?.readSessionUpdatedAt
+        ? sessionApi.readSessionUpdatedAt({ storePath, sessionKey: route.sessionKey })
+        : null;
+    const resolvedAttachmentResult = await resolveInboundAttachmentsForAgent({
+      attachments: inbound.attachments,
+      qqCfg,
+      logger,
     });
-    if (fallback.error) {
-      logger.error(`sendText ASR fallback failed: ${fallback.error}`);
+    if (
+      qqCfg.asr?.enabled &&
+      resolvedAttachmentResult.hasVoiceAttachment &&
+      !resolvedAttachmentResult.hasVoiceTranscript
+    ) {
+      const fallback = await qqbotOutbound.sendText({
+        cfg: { channels: { qqbot: qqCfg } },
+        to: target.to,
+        text: buildVoiceASRFallbackReply(resolvedAttachmentResult.asrErrorMessage),
+        replyToId: inbound.messageId,
+        replyEventId: inbound.eventId,
+      });
+      if (fallback.error) {
+        logger.error(`sendText ASR fallback failed: ${fallback.error}`);
+      }
+      return;
     }
-    return;
-  }
-  const resolvedAttachments = resolvedAttachmentResult.attachments;
-  const localImageCount = resolvedAttachments.filter((item) => Boolean(item.localImagePath)).length;
-  if (localImageCount > 0) {
-    logger.info(`prepared ${localImageCount} local image attachment(s) for agent`);
-  }
-  const rawBody = buildInboundContentWithAttachments({
-    content: inbound.content,
-    attachments: resolvedAttachments,
-  });
-  const envelopeFrom = resolveEnvelopeFrom(inbound);
-  const inboundBody =
-    replyApi.formatInboundEnvelope
-      ? replyApi.formatInboundEnvelope({
-          channel: "QQ",
-          from: envelopeFrom,
-          body: rawBody,
-          timestamp: inbound.timestamp,
-          previousTimestamp: previousTimestamp ?? undefined,
-          chatType: inbound.type === "direct" ? "direct" : "group",
-          senderLabel: inbound.senderName ?? inbound.senderId,
-          sender: { id: inbound.senderId, name: inbound.senderName ?? undefined },
-          envelope: envelopeOptions,
-        })
-      : replyApi.formatAgentEnvelope
-        ? replyApi.formatAgentEnvelope({
+    const resolvedAttachments = resolvedAttachmentResult.attachments;
+    const localImageCount = resolvedAttachments.filter((item) => Boolean(item.localImagePath)).length;
+    if (localImageCount > 0) {
+      logger.info(`prepared ${localImageCount} local image attachment(s) for agent`);
+    }
+    const rawBody = buildInboundContentWithAttachments({
+      content: inbound.content,
+      attachments: resolvedAttachments,
+    });
+    const envelopeFrom = resolveEnvelopeFrom(inbound);
+    const inboundBody =
+      replyApi.formatInboundEnvelope
+        ? replyApi.formatInboundEnvelope({
             channel: "QQ",
             from: envelopeFrom,
+            body: rawBody,
             timestamp: inbound.timestamp,
             previousTimestamp: previousTimestamp ?? undefined,
+            chatType: inbound.type === "direct" ? "direct" : "group",
+            senderLabel: inbound.senderName ?? inbound.senderId,
+            sender: { id: inbound.senderId, name: inbound.senderName ?? undefined },
             envelope: envelopeOptions,
-            body: rawBody,
           })
-        : rawBody;
+        : replyApi.formatAgentEnvelope
+          ? replyApi.formatAgentEnvelope({
+              channel: "QQ",
+              from: envelopeFrom,
+              timestamp: inbound.timestamp,
+              previousTimestamp: previousTimestamp ?? undefined,
+              envelope: envelopeOptions,
+              body: rawBody,
+            })
+          : rawBody;
 
-  const inboundCtx = buildInboundContext({
-    event: inbound,
-    sessionKey: route.sessionKey,
-    accountId: route.accountId ?? accountId,
-    body: inboundBody,
-    rawBody,
-    commandBody: rawBody,
-  });
-
-  const finalizeInboundContext = replyApi?.finalizeInboundContext as
-    | ((ctx: InboundContext) => InboundContext)
-    | undefined;
-  const finalCtx = finalizeInboundContext ? finalizeInboundContext(inboundCtx) : inboundCtx;
-
-  let cronBase = "";
-  if (typeof finalCtx.RawBody === "string" && finalCtx.RawBody) {
-    cronBase = finalCtx.RawBody;
-  } else if (typeof finalCtx.Body === "string" && finalCtx.Body) {
-    cronBase = finalCtx.Body;
-  } else if (typeof finalCtx.CommandBody === "string" && finalCtx.CommandBody) {
-    cronBase = finalCtx.CommandBody;
-  }
-
-  if (cronBase) {
-    const nextCron = appendCronHiddenPrompt(cronBase);
-    if (nextCron !== cronBase) {
-      finalCtx.BodyForAgent = nextCron;
-    }
-  }
-
-  if (storePath && sessionApi?.recordInboundSession) {
-    try {
-      const mainSessionKeyRaw = (route as Record<string, unknown>)?.mainSessionKey;
-      const mainSessionKey =
-        typeof mainSessionKeyRaw === "string" && mainSessionKeyRaw.trim()
-          ? mainSessionKeyRaw
-          : undefined;
-      const isGroup = inbound.type === "group" || inbound.type === "channel";
-      const updateLastRoute =
-        !isGroup
-          ? {
-              sessionKey: mainSessionKey ?? route.sessionKey,
-              channel: "qqbot",
-              to: (finalCtx.OriginatingTo ?? finalCtx.To ?? `user:${inbound.senderId}`) as string,
-              accountId: route.accountId ?? accountId,
-            }
-          : undefined;
-
-      const recordSessionKey =
-        typeof finalCtx.SessionKey === "string" && finalCtx.SessionKey.trim()
-          ? finalCtx.SessionKey
-          : route.sessionKey;
-
-      await sessionApi.recordInboundSession({
-        storePath,
-        sessionKey: recordSessionKey,
-        ctx: finalCtx,
-        updateLastRoute,
-        onRecordError: (err: unknown) => {
-          logger.warn(`failed to record inbound session: ${String(err)}`);
-        },
-      });
-    } catch (err) {
-      logger.warn(`failed to record inbound session: ${String(err)}`);
-    }
-  }
-
-  const textApi = runtime.channel?.text;
-  const limit =
-    textApi?.resolveTextChunkLimit?.({
-      cfg,
-      channel: "qqbot",
-      defaultLimit: qqCfg.textChunkLimit ?? 1500,
-    }) ?? (qqCfg.textChunkLimit ?? 1500);
-
-  const chunkMode = textApi?.resolveChunkMode?.(cfg, "qqbot");
-  const tableMode = textApi?.resolveMarkdownTableMode?.({
-    cfg,
-    channel: "qqbot",
-    accountId: route.accountId ?? accountId,
-  });
-  const resolvedTableMode = tableMode ?? "bullets";
-  const chunkText = (text: string): string[] => {
-    if (textApi?.chunkMarkdownText && limit > 0) {
-      return textApi.chunkMarkdownText(text, limit);
-    }
-    if (textApi?.chunkTextWithMode && limit > 0) {
-      return textApi.chunkTextWithMode(text, limit, chunkMode);
-    }
-    return [text];
-  };
-
-  const replyFinalOnly = qqCfg.replyFinalOnly ?? false;
-
-  const deliver = async (payload: unknown, info?: { kind?: string }): Promise<void> => {
-    const typed = payload as { text?: string; mediaUrl?: string; mediaUrls?: string[] } | undefined;
-    const mediaLineResult = extractMediaLinesFromText({
-      text: typed?.text ?? "",
-      logger,
+    const inboundCtx = buildInboundContext({
+      event: inbound,
+      sessionKey: route.sessionKey,
+      accountId: route.accountId ?? accountId,
+      body: inboundBody,
+      rawBody,
+      commandBody: rawBody,
     });
-    const localMediaResult = extractLocalMediaFromText({
-      text: mediaLineResult.text,
-      logger,
-    });
-    const cleanedText = sanitizeQQBotOutboundText(localMediaResult.text);
 
-    const payloadMediaUrls = Array.isArray(typed?.mediaUrls)
-      ? typed?.mediaUrls
-      : typed?.mediaUrl
-        ? [typed.mediaUrl]
-        : [];
+    const finalizeInboundContext = replyApi?.finalizeInboundContext as
+      | ((ctx: InboundContext) => InboundContext)
+      | undefined;
+    const finalCtx = finalizeInboundContext ? finalizeInboundContext(inboundCtx) : inboundCtx;
 
-    const mediaQueue: string[] = [];
-    const seenMedia = new Set<string>();
-    const addMedia = (value?: string) => {
-      const next = value?.trim();
-      if (!next) return;
-      if (seenMedia.has(next)) return;
-      seenMedia.add(next);
-      mediaQueue.push(next);
-    };
+    let cronBase = "";
+    if (typeof finalCtx.RawBody === "string" && finalCtx.RawBody) {
+      cronBase = finalCtx.RawBody;
+    } else if (typeof finalCtx.Body === "string" && finalCtx.Body) {
+      cronBase = finalCtx.Body;
+    } else if (typeof finalCtx.CommandBody === "string" && finalCtx.CommandBody) {
+      cronBase = finalCtx.CommandBody;
+    }
 
-    for (const url of payloadMediaUrls) addMedia(url);
-    for (const url of mediaLineResult.mediaUrls) addMedia(url);
-    for (const url of localMediaResult.mediaUrls) addMedia(url);
-
-    const deliveryDecision = evaluateReplyFinalOnlyDelivery({
-      replyFinalOnly,
-      kind: info?.kind,
-      hasMedia: mediaQueue.length > 0,
-      sanitizedText: cleanedText,
-    });
-    if (deliveryDecision.skipDelivery) return;
-
-    const suppressEchoText =
-      mediaQueue.length > 0 &&
-      shouldSuppressQQBotTextWhenMediaPresent(localMediaResult.text, cleanedText);
-    const suppressText = deliveryDecision.suppressText || suppressEchoText;
-    const textToSend = suppressText ? "" : cleanedText;
-
-    if (textToSend) {
-      const converted = textApi?.convertMarkdownTables
-        ? textApi.convertMarkdownTables(textToSend, resolvedTableMode)
-        : textToSend;
-      const chunks = chunkText(converted);
-      for (const chunk of chunks) {
-        const result = await qqbotOutbound.sendText({
-          cfg: { channels: { qqbot: qqCfg } },
-          to: target.to,
-          text: chunk,
-          replyToId: inbound.messageId,
-          replyEventId: inbound.eventId,
-        });
-        if (result.error) {
-          logger.error(`sendText failed: ${result.error}`);
-        }
+    if (cronBase) {
+      const nextCron = appendCronHiddenPrompt(cronBase);
+      if (nextCron !== cronBase) {
+        finalCtx.BodyForAgent = nextCron;
       }
     }
 
-    await sendQQBotMediaWithFallback({
-      qqCfg,
-      to: target.to,
-      mediaQueue,
-      replyToId: inbound.messageId,
-      replyEventId: inbound.eventId,
-      logger,
-    });
-  };
+    if (storePath && sessionApi?.recordInboundSession) {
+      try {
+        const mainSessionKeyRaw = (route as Record<string, unknown>)?.mainSessionKey;
+        const mainSessionKey =
+          typeof mainSessionKeyRaw === "string" && mainSessionKeyRaw.trim()
+            ? mainSessionKeyRaw
+            : undefined;
+        const isGroup = inbound.type === "group" || inbound.type === "channel";
+        const updateLastRoute =
+          !isGroup
+            ? {
+                sessionKey: mainSessionKey ?? route.sessionKey,
+                channel: "qqbot",
+                to: (finalCtx.OriginatingTo ?? finalCtx.To ?? `user:${inbound.senderId}`) as string,
+                accountId: route.accountId ?? accountId,
+              }
+            : undefined;
 
-  const humanDelay = replyApi.resolveHumanDelayConfig?.(cfg, route.agentId);
-  const dispatchBuffered = replyApi.dispatchReplyWithBufferedBlockDispatcher;
-  if (dispatchBuffered) {
-    await dispatchBuffered({
-      ctx: finalCtx,
+        const recordSessionKey =
+          typeof finalCtx.SessionKey === "string" && finalCtx.SessionKey.trim()
+            ? finalCtx.SessionKey
+            : route.sessionKey;
+
+        await sessionApi.recordInboundSession({
+          storePath,
+          sessionKey: recordSessionKey,
+          ctx: finalCtx,
+          updateLastRoute,
+          onRecordError: (err: unknown) => {
+            logger.warn(`failed to record inbound session: ${String(err)}`);
+          },
+        });
+      } catch (err) {
+        logger.warn(`failed to record inbound session: ${String(err)}`);
+      }
+    }
+
+    const textApi = runtime.channel?.text;
+    const limit =
+      textApi?.resolveTextChunkLimit?.({
+        cfg,
+        channel: "qqbot",
+        defaultLimit: qqCfg.textChunkLimit ?? 1500,
+      }) ?? (qqCfg.textChunkLimit ?? 1500);
+
+    const chunkMode = textApi?.resolveChunkMode?.(cfg, "qqbot");
+    const tableMode = textApi?.resolveMarkdownTableMode?.({
       cfg,
-      dispatcherOptions: {
-        deliver,
-        humanDelay,
-        onError: (err: unknown, info: { kind: string }) => {
-          logger.error(`${info.kind} reply failed: ${String(err)}`);
-        },
-        onSkip: (_payload: unknown, info: { kind: string; reason: string }) => {
-          if (info.reason !== "silent") {
-            logger.info(`reply skipped: ${info.reason}`);
-          }
-        },
-      },
+      channel: "qqbot",
+      accountId: route.accountId ?? accountId,
     });
-    return;
-  }
+    const resolvedTableMode = tableMode ?? "bullets";
+    const chunkText = (text: string): string[] => {
+      if (textApi?.chunkMarkdownText && limit > 0) {
+        return textApi.chunkMarkdownText(text, limit);
+      }
+      if (textApi?.chunkTextWithMode && limit > 0) {
+        return textApi.chunkTextWithMode(text, limit, chunkMode);
+      }
+      return [text];
+    };
 
-  const dispatcherResult = replyApi.createReplyDispatcherWithTyping
-    ? replyApi.createReplyDispatcherWithTyping({
-        deliver,
-        humanDelay,
-        onError: (err: unknown, info: { kind: string }) => {
-          logger.error(`${info.kind} reply failed: ${String(err)}`);
+    const replyFinalOnly = qqCfg.replyFinalOnly ?? false;
+
+    const deliver = async (payload: unknown, info?: { kind?: string }): Promise<void> => {
+      const typed = payload as { text?: string; mediaUrl?: string; mediaUrls?: string[] } | undefined;
+      const mediaLineResult = extractMediaLinesFromText({
+        text: typed?.text ?? "",
+        logger,
+      });
+      const localMediaResult = extractLocalMediaFromText({
+        text: mediaLineResult.text,
+        logger,
+      });
+      const cleanedText = sanitizeQQBotOutboundText(localMediaResult.text);
+
+      const payloadMediaUrls = Array.isArray(typed?.mediaUrls)
+        ? typed?.mediaUrls
+        : typed?.mediaUrl
+          ? [typed.mediaUrl]
+          : [];
+
+      const mediaQueue: string[] = [];
+      const seenMedia = new Set<string>();
+      const addMedia = (value?: string) => {
+        const next = value?.trim();
+        if (!next) return;
+        if (seenMedia.has(next)) return;
+        seenMedia.add(next);
+        mediaQueue.push(next);
+      };
+
+      for (const url of payloadMediaUrls) addMedia(url);
+      for (const url of mediaLineResult.mediaUrls) addMedia(url);
+      for (const url of localMediaResult.mediaUrls) addMedia(url);
+
+      const deliveryDecision = evaluateReplyFinalOnlyDelivery({
+        replyFinalOnly,
+        kind: info?.kind,
+        hasMedia: mediaQueue.length > 0,
+        sanitizedText: cleanedText,
+      });
+      if (deliveryDecision.skipDelivery) return;
+
+      const suppressEchoText =
+        mediaQueue.length > 0 &&
+        shouldSuppressQQBotTextWhenMediaPresent(localMediaResult.text, cleanedText);
+      const suppressText = deliveryDecision.suppressText || suppressEchoText;
+      const textToSend = suppressText ? "" : cleanedText;
+
+      if (textToSend) {
+        const converted = textApi?.convertMarkdownTables
+          ? textApi.convertMarkdownTables(textToSend, resolvedTableMode)
+          : textToSend;
+        const chunks = chunkText(converted);
+        for (const chunk of chunks) {
+          const result = await qqbotOutbound.sendText({
+            cfg: { channels: { qqbot: qqCfg } },
+            to: target.to,
+            text: chunk,
+            replyToId: inbound.messageId,
+            replyEventId: inbound.eventId,
+          });
+          if (result.error) {
+            logger.error(`sendText failed: ${result.error}`);
+          } else {
+            longTaskNotice.markReplyDelivered();
+          }
+        }
+      }
+
+      await sendQQBotMediaWithFallback({
+        qqCfg,
+        to: target.to,
+        mediaQueue,
+        replyToId: inbound.messageId,
+        replyEventId: inbound.eventId,
+        logger,
+        onDelivered: () => {
+          longTaskNotice.markReplyDelivered();
         },
-      })
-    : {
-        dispatcher: replyApi.createReplyDispatcher?.({
+      });
+    };
+
+    const humanDelay = replyApi.resolveHumanDelayConfig?.(cfg, route.agentId);
+    const dispatchBuffered = replyApi.dispatchReplyWithBufferedBlockDispatcher;
+    if (dispatchBuffered) {
+      await dispatchBuffered({
+        ctx: finalCtx,
+        cfg,
+        dispatcherOptions: {
           deliver,
           humanDelay,
           onError: (err: unknown, info: { kind: string }) => {
             logger.error(`${info.kind} reply failed: ${String(err)}`);
           },
-        }),
-        replyOptions: {},
-        markDispatchIdle: () => undefined,
-      };
+          onSkip: (_payload: unknown, info: { kind: string; reason: string }) => {
+            if (info.reason !== "silent") {
+              logger.info(`reply skipped: ${info.reason}`);
+            }
+          },
+        },
+      });
+      return;
+    }
 
-  if (!dispatcherResult.dispatcher || !replyApi.dispatchReplyFromConfig) {
-    logger.warn("dispatcher not available, skipping reply");
-    return;
+    const dispatcherResult = replyApi.createReplyDispatcherWithTyping
+      ? replyApi.createReplyDispatcherWithTyping({
+          deliver,
+          humanDelay,
+          onError: (err: unknown, info: { kind: string }) => {
+            logger.error(`${info.kind} reply failed: ${String(err)}`);
+          },
+        })
+      : {
+          dispatcher: replyApi.createReplyDispatcher?.({
+            deliver,
+            humanDelay,
+            onError: (err: unknown, info: { kind: string }) => {
+              logger.error(`${info.kind} reply failed: ${String(err)}`);
+            },
+          }),
+          replyOptions: {},
+          markDispatchIdle: () => undefined,
+        };
+
+    if (!dispatcherResult.dispatcher || !replyApi.dispatchReplyFromConfig) {
+      logger.warn("dispatcher not available, skipping reply");
+      return;
+    }
+
+    await replyApi.dispatchReplyFromConfig({
+      ctx: finalCtx,
+      cfg,
+      dispatcher: dispatcherResult.dispatcher,
+      replyOptions: dispatcherResult.replyOptions,
+    });
+
+    dispatcherResult.markDispatchIdle?.();
+  } finally {
+    longTaskNotice.dispose();
   }
-
-  await replyApi.dispatchReplyFromConfig({
-    ctx: finalCtx,
-    cfg,
-    dispatcher: dispatcherResult.dispatcher,
-    replyOptions: dispatcherResult.replyOptions,
-  });
-
-  dispatcherResult.markDispatchIdle?.();
 }
 
 function shouldHandleMessage(event: QQInboundMessage, qqCfg: QQBotAccountConfig, logger: Logger): boolean {

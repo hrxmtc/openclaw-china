@@ -152,6 +152,7 @@ export const qqbotPlugin = {
         historyLimit: { type: "integer", minimum: 0 },
         textChunkLimit: { type: "integer", minimum: 1 },
         replyFinalOnly: { type: "boolean" },
+        longTaskNoticeDelayMs: { type: "integer", minimum: 0 },
         maxFileSizeMB: { type: "number" },
         mediaTimeoutMs: { type: "number" },
         accounts: {
@@ -183,6 +184,7 @@ export const qqbotPlugin = {
               historyLimit: { type: "integer", minimum: 0 },
               textChunkLimit: { type: "integer", minimum: 1 },
               replyFinalOnly: { type: "boolean" },
+              longTaskNoticeDelayMs: { type: "integer", minimum: 0 },
               maxFileSizeMB: { type: "number" },
               mediaTimeoutMs: { type: "number" },
             },
