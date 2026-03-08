@@ -9,6 +9,7 @@ type WsMessageContext = {
   reqId: string;
   to: string;
   streamId: string;
+  content: string;
   createdAt: number;
   updatedAt: number;
   sessionKey?: string;
@@ -41,6 +42,16 @@ const messageByRunId = new Map<string, string>();
 const messageByTarget = new Map<string, Set<string>>();
 const eventByTarget = new Map<string, Set<string>>();
 const finishTimers = new Map<string, NodeJS.Timeout>();
+
+function appendStreamSnapshotContent(current: string, chunk: string): string {
+  if (!current.trim()) return chunk;
+  if (!chunk.trim()) return current;
+
+  const currentEndsWithBreak = /\n\s*$/.test(current);
+  const chunkStartsWithBreak = /^\s*\n/.test(chunk);
+  const separator = currentEndsWithBreak || chunkStartsWithBreak ? "" : "\n\n";
+  return `${current}${separator}${chunk}`;
+}
 
 function now(): number {
   return Date.now();
@@ -214,6 +225,7 @@ export function registerWecomWsMessageContext(params: {
     reqId: params.reqId.trim(),
     to: params.to.trim(),
     streamId: params.streamId?.trim() || createWecomWsStreamId(),
+    content: "",
     createdAt: now(),
     updatedAt: now(),
     started: false,
@@ -281,16 +293,17 @@ export async function appendWecomWsActiveStreamChunk(params: {
 }): Promise<boolean> {
   const context = findMessageContext(params);
   if (!context) return false;
-  const content = params.chunk.trim();
-  if (!content) return true;
+  const chunk = String(params.chunk ?? "");
+  if (!chunk.trim()) return true;
   const key = messageKey(context.accountId, context.reqId);
   clearFinishTimer(key);
   await enqueue(context, async () => {
+    context.content = appendStreamSnapshotContent(context.content, chunk);
     await context.send(
       buildWecomWsRespondMessageCommand({
         reqId: context.reqId,
         streamId: context.streamId,
-        content,
+        content: context.content,
         finish: false,
       })
     );
@@ -325,13 +338,18 @@ export async function finishWecomWsMessageContext(params: {
   if (!context || context.finished) return;
   await enqueue(context, async () => {
     const errorMessage = params.error ? `Error: ${params.error instanceof Error ? params.error.message : String(params.error)}` : "";
-    const sendFinish = context.started || Boolean(errorMessage);
+    const finalContent = errorMessage
+      ? context.content
+        ? `${context.content}\n\n${errorMessage}`
+        : errorMessage
+      : context.content;
+    const sendFinish = context.started || Boolean(finalContent);
     if (sendFinish) {
       await context.send(
         buildWecomWsRespondMessageCommand({
           reqId: context.reqId,
           streamId: context.streamId,
-          content: errorMessage || undefined,
+          content: finalContent || undefined,
           finish: true,
         })
       );

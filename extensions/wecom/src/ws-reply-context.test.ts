@@ -15,7 +15,7 @@ describe("wecom ws reply context", () => {
     clearWecomWsReplyContextsForAccount("acc-1");
   });
 
-  it("appends and finishes the active message stream by route context", async () => {
+  it("separates multiple OpenClaw reply payloads with blank lines and repeats the final content on finish", async () => {
     const sent: unknown[] = [];
     registerWecomWsMessageContext({
       accountId: "acc-1",
@@ -43,12 +43,21 @@ describe("wecom ws reply context", () => {
       })
     ).resolves.toBe(true);
 
+    await expect(
+      appendWecomWsActiveStreamChunk({
+        accountId: "acc-1",
+        to: "user:alice",
+        chunk: "world",
+        runId: "run-1",
+      })
+    ).resolves.toBe(true);
+
     await finishWecomWsMessageContext({
       accountId: "acc-1",
       reqId: "req-1",
     });
 
-    expect(sent).toHaveLength(2);
+    expect(sent).toHaveLength(3);
     expect(sent[0]).toMatchObject({
       cmd: "aibot_respond_msg",
       headers: { req_id: "req-1" },
@@ -68,7 +77,107 @@ describe("wecom ws reply context", () => {
         msgtype: "stream",
         stream: {
           id: "stream-1",
+          finish: false,
+          content: "hello\n\nworld",
+        },
+      },
+    });
+    expect(sent[2]).toMatchObject({
+      cmd: "aibot_respond_msg",
+      headers: { req_id: "req-1" },
+      body: {
+        msgtype: "stream",
+        stream: {
+          id: "stream-1",
           finish: true,
+          content: "hello\n\nworld",
+        },
+      },
+    });
+  });
+
+  it("does not add an extra separator when the next payload already starts on a new line", async () => {
+    const sent: unknown[] = [];
+    registerWecomWsMessageContext({
+      accountId: "acc-1",
+      reqId: "req-3",
+      to: "user:alice",
+      send: async (frame) => {
+        sent.push(frame);
+      },
+      streamId: "stream-3",
+    });
+
+    await appendWecomWsActiveStreamChunk({
+      accountId: "acc-1",
+      to: "user:alice",
+      chunk: "hello",
+    });
+
+    await appendWecomWsActiveStreamChunk({
+      accountId: "acc-1",
+      to: "user:alice",
+      chunk: "\nworld",
+    });
+
+    await finishWecomWsMessageContext({
+      accountId: "acc-1",
+      reqId: "req-3",
+    });
+
+    expect(sent[1]).toMatchObject({
+      body: {
+        stream: {
+          content: "hello\nworld",
+        },
+      },
+    });
+    expect(sent[2]).toMatchObject({
+      body: {
+        stream: {
+          content: "hello\nworld",
+          finish: true,
+        },
+      },
+    });
+  });
+
+  it("appends error details to the final stream snapshot", async () => {
+    const sent: unknown[] = [];
+    registerWecomWsMessageContext({
+      accountId: "acc-1",
+      reqId: "req-2",
+      to: "user:alice",
+      send: async (frame) => {
+        sent.push(frame);
+      },
+      streamId: "stream-2",
+    });
+
+    await expect(
+      appendWecomWsActiveStreamChunk({
+        accountId: "acc-1",
+        to: "user:alice",
+        chunk: "partial answer",
+      })
+    ).resolves.toBe(true);
+
+    await finishWecomWsMessageContext({
+      accountId: "acc-1",
+      reqId: "req-2",
+      error: new Error("upstream failed"),
+    });
+
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatchObject({
+      cmd: "aibot_respond_msg",
+      headers: { req_id: "req-2" },
+      body: {
+        msgtype: "stream",
+        stream: {
+          id: "stream-2",
+          finish: true,
+          content: "partial answer\n\nError: upstream failed",
         },
       },
     });
