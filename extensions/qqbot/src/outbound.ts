@@ -35,23 +35,24 @@ type QQBotResponseWithExtInfo = {
 };
 
 function stripPrefix(value: string, prefix: string): string {
-  return value.startsWith(prefix) ? value.slice(prefix.length) : value;
+  return value.slice(0, prefix.length).toLowerCase() === prefix ? value.slice(prefix.length) : value;
 }
 
 function parseTarget(to: string): { kind: TargetKind; id: string } {
   let raw = to.trim();
   raw = stripPrefix(raw, "qqbot:");
+  const normalizedRaw = raw.toLowerCase();
 
-  if (raw.startsWith("group:")) {
+  if (normalizedRaw.startsWith("group:")) {
     return { kind: "group", id: raw.slice("group:".length) };
   }
-  if (raw.startsWith("channel:")) {
+  if (normalizedRaw.startsWith("channel:")) {
     return { kind: "channel", id: raw.slice("channel:".length) };
   }
-  if (raw.startsWith("user:")) {
+  if (normalizedRaw.startsWith("user:")) {
     return { kind: "c2c", id: raw.slice("user:".length) };
   }
-  if (raw.startsWith("c2c:")) {
+  if (normalizedRaw.startsWith("c2c:")) {
     return { kind: "c2c", id: raw.slice("c2c:".length) };
   }
 

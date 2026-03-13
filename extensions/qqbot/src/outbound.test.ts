@@ -176,6 +176,27 @@ describe("qqbotOutbound event_id fallback", () => {
     infoSpy.mockRestore();
   });
 
+  it("parses mixed-case qqbot user prefixes before sending", async () => {
+    mocks.sendProactiveC2CMessage.mockResolvedValueOnce({
+      id: "c2c-case-1",
+      timestamp: 14,
+    });
+
+    const result = await qqbotOutbound.sendText({
+      cfg: baseCfg,
+      to: "QQBOT:USER:UserABC123XYZ",
+      text: "hello mixed case",
+    });
+
+    expect(result).toEqual({ channel: "qqbot", messageId: "c2c-case-1", timestamp: 14 });
+    expect(mocks.sendProactiveC2CMessage).toHaveBeenCalledWith({
+      accessToken: "token-1",
+      openid: "UserABC123XYZ",
+      content: "hello mixed case",
+      markdown: true,
+    });
+  });
+
   it("retries group text with event_id when msg_id is expired", async () => {
     mocks.sendGroupMessage
       .mockRejectedValueOnce(

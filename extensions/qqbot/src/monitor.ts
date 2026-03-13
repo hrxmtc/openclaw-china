@@ -69,6 +69,11 @@ interface ActiveConnection {
   connecting: boolean;
 }
 
+function isConnectionIdle(conn: ActiveConnection | undefined): boolean {
+  if (!conn) return true;
+  return !conn.socket && !conn.promise && !conn.connecting;
+}
+
 // 按账户 ID 管理的连接映射
 const activeConnections = new Map<string, ActiveConnection>();
 
@@ -111,7 +116,10 @@ function clearTimers(conn: ActiveConnection): void {
 /**
  * 清理账户的 WebSocket
  */
-function cleanupSocket(conn: ActiveConnection): void {
+function cleanupSocket(conn: ActiveConnection, expectedSocket?: WebSocket): boolean {
+  if (expectedSocket && conn.socket !== expectedSocket) {
+    return false;
+  }
   clearTimers(conn);
   if (conn.socket) {
     try {
@@ -123,6 +131,7 @@ function cleanupSocket(conn: ActiveConnection): void {
     }
     conn.socket = null;
   }
+  return true;
 }
 
 export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise<void> {
@@ -132,13 +141,21 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
     error: runtime?.error,
   });
 
-  const conn = getOrCreateConnection(accountId);
+  const existingConn = activeConnections.get(accountId);
+  if (!existingConn) {
+    // continue
+  } else if (isConnectionIdle(existingConn)) {
+    activeConnections.delete(accountId);
+  }
 
-  // 如果该账户已有活动连接，返回现有 promise
-  if (conn.socket) {
-    if (conn.promise) {
-      return conn.promise;
-    }
+  const conn = activeConnections.get(accountId);
+
+  // 如果该账户已有活动连接或正在建立连接，返回现有 promise
+  const existingPromise = conn?.promise;
+  if (existingPromise) {
+    return existingPromise;
+  }
+  if (conn?.socket) {
     throw new Error(`QQBot monitor state invalid for account ${accountId}: active socket without promise`);
   }
 
@@ -151,19 +168,22 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
     throw new Error(`QQBot not configured for account ${accountId} (missing appId or clientSecret)`);
   }
 
-  conn.promise = new Promise<void>((resolve, reject) => {
+  const nextConn = conn ?? getOrCreateConnection(accountId);
+
+  nextConn.promise = new Promise<void>((resolve, reject) => {
     let stopped = false;
 
     const finish = (err?: unknown) => {
       if (stopped) return;
       stopped = true;
       abortSignal?.removeEventListener("abort", onAbort);
-      cleanupSocket(conn);
-      conn.sessionId = null;
-      conn.lastSeq = null;
-      conn.promise = null;
-      conn.stop = null;
-      conn.reconnectAttempt = 0;
+      cleanupSocket(nextConn);
+      nextConn.connecting = false;
+      nextConn.sessionId = null;
+      nextConn.lastSeq = null;
+      nextConn.promise = null;
+      nextConn.stop = null;
+      nextConn.reconnectAttempt = 0;
       activeConnections.delete(accountId);
       if (err) {
         reject(err);
@@ -177,37 +197,37 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
       finish();
     };
 
-    conn.stop = () => {
+    nextConn.stop = () => {
       logger.info("stop requested");
       finish();
     };
 
     const scheduleReconnect = (reason: string) => {
       if (stopped) return;
-      if (conn.reconnectTimer) return;
+      if (nextConn.reconnectTimer) return;
       const delay =
-        RECONNECT_DELAYS_MS[Math.min(conn.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
-      conn.reconnectAttempt += 1;
+        RECONNECT_DELAYS_MS[Math.min(nextConn.reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)];
+      nextConn.reconnectAttempt += 1;
       logger.warn(`[reconnect] ${reason}; retry in ${delay}ms`);
-      conn.reconnectTimer = setTimeout(() => {
-        conn.reconnectTimer = null;
+      nextConn.reconnectTimer = setTimeout(() => {
+        nextConn.reconnectTimer = null;
         void connect();
       }, delay);
     };
 
     const startHeartbeat = (intervalMs: number) => {
-      if (conn.heartbeatTimer) {
-        clearInterval(conn.heartbeatTimer);
+      if (nextConn.heartbeatTimer) {
+        clearInterval(nextConn.heartbeatTimer);
       }
-      conn.heartbeatTimer = setInterval(() => {
-        if (!conn.socket || conn.socket.readyState !== WebSocket.OPEN) return;
-        const payload = JSON.stringify({ op: 1, d: conn.lastSeq });
-        conn.socket.send(payload);
+      nextConn.heartbeatTimer = setInterval(() => {
+        if (!nextConn.socket || nextConn.socket.readyState !== WebSocket.OPEN) return;
+        const payload = JSON.stringify({ op: 1, d: nextConn.lastSeq });
+        nextConn.socket.send(payload);
       }, intervalMs);
     };
 
     const sendIdentify = (token: string) => {
-      if (!conn.socket || conn.socket.readyState !== WebSocket.OPEN) return;
+      if (!nextConn.socket || nextConn.socket.readyState !== WebSocket.OPEN) return;
       const payload = {
         op: 2,
         d: {
@@ -216,11 +236,11 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
           shard: [0, 1],
         },
       };
-      conn.socket.send(JSON.stringify(payload));
+      nextConn.socket.send(JSON.stringify(payload));
     };
 
     const sendResume = (token: string, session: string, seq: number) => {
-      if (!conn.socket || conn.socket.readyState !== WebSocket.OPEN) return;
+      if (!nextConn.socket || nextConn.socket.readyState !== WebSocket.OPEN) return;
       const payload = {
         op: 6,
         d: {
@@ -229,12 +249,15 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
           seq,
         },
       };
-      conn.socket.send(JSON.stringify(payload));
+      nextConn.socket.send(JSON.stringify(payload));
     };
 
-    const handleGatewayPayload = async (payload: GatewayPayload) => {
+    const handleGatewayPayload = async (payload: GatewayPayload, activeSocket: WebSocket) => {
+      if (stopped || nextConn.socket !== activeSocket) {
+        return;
+      }
       if (typeof payload.s === "number") {
-        conn.lastSeq = payload.s;
+        nextConn.lastSeq = payload.s;
       }
 
       switch (payload.op) {
@@ -244,8 +267,11 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
           startHeartbeat(interval);
 
           const token = await getAccessToken(qqCfg.appId as string, qqCfg.clientSecret as string);
-          if (conn.sessionId && typeof conn.lastSeq === "number") {
-            sendResume(token, conn.sessionId, conn.lastSeq);
+          if (stopped || nextConn.socket !== activeSocket) {
+            return;
+          }
+          if (nextConn.sessionId && typeof nextConn.lastSeq === "number") {
+            sendResume(token, nextConn.sessionId, nextConn.lastSeq);
           } else {
             sendIdentify(token);
           }
@@ -256,14 +282,18 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
           setStatus?.({ lastEventAt: Date.now() });
           return;
         case 7:
-          cleanupSocket(conn);
+          if (!cleanupSocket(nextConn, activeSocket)) {
+            return;
+          }
           scheduleReconnect("server requested reconnect");
           return;
         case 9:
-          conn.sessionId = null;
-          conn.lastSeq = null;
+          nextConn.sessionId = null;
+          nextConn.lastSeq = null;
           clearTokenCache(qqCfg.appId as string);
-          cleanupSocket(conn);
+          if (!cleanupSocket(nextConn, activeSocket)) {
+            return;
+          }
           scheduleReconnect("invalid session");
           return;
         case 0: {
@@ -271,14 +301,14 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
           if (eventType === "READY") {
             const ready = payload.d as { session_id?: string } | undefined;
             if (ready?.session_id) {
-              conn.sessionId = ready.session_id;
+              nextConn.sessionId = ready.session_id;
             }
-            conn.reconnectAttempt = 0;
+            nextConn.reconnectAttempt = 0;
             logger.info("gateway ready");
             return;
           }
           if (eventType === "RESUMED") {
-            conn.reconnectAttempt = 0;
+            nextConn.reconnectAttempt = 0;
             logger.info("gateway resumed");
             return;
           }
@@ -300,17 +330,23 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
     };
 
     const connect = async () => {
-      if (stopped || conn.connecting) return;
-      conn.connecting = true;
+      if (stopped || nextConn.connecting) return;
+      nextConn.connecting = true;
 
       try {
-        cleanupSocket(conn);
+        cleanupSocket(nextConn);
         const token = await getAccessToken(qqCfg.appId as string, qqCfg.clientSecret as string);
+        if (stopped) return;
         const gatewayUrl = await getGatewayUrl(token);
+        if (stopped) return;
         logger.info(`connecting gateway: ${gatewayUrl}`);
 
         const ws = new WebSocket(gatewayUrl);
-        conn.socket = ws;
+        nextConn.socket = ws;
+        if (stopped) {
+          cleanupSocket(nextConn, ws);
+          return;
+        }
 
         ws.on("open", () => {
           logger.info("gateway socket opened");
@@ -325,26 +361,31 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
             logger.warn(`failed to parse gateway payload: ${String(err)}`);
             return;
           }
-          void handleGatewayPayload(payload).catch((err) => {
+          void handleGatewayPayload(payload, ws).catch((err) => {
             logger.error(`gateway dispatch error: ${String(err)}`);
           });
         });
 
         ws.on("close", (code, reason) => {
+          if (!cleanupSocket(nextConn, ws)) {
+            return;
+          }
           logger.warn(`gateway socket closed (${code}) ${String(reason)}`);
-          cleanupSocket(conn);
           scheduleReconnect("socket closed");
         });
 
         ws.on("error", (err) => {
+          if (stopped || nextConn.socket !== ws) {
+            return;
+          }
           logger.error(`gateway socket error: ${String(err)}`);
         });
       } catch (err) {
         logger.error(`gateway connect failed: ${formatGatewayConnectError(err)}`);
-        cleanupSocket(conn);
+        cleanupSocket(nextConn);
         scheduleReconnect("connect failed");
       } finally {
-        conn.connecting = false;
+        nextConn.connecting = false;
       }
     };
 
@@ -357,7 +398,7 @@ export async function monitorQQBotProvider(opts: MonitorQQBotOpts = {}): Promise
     void connect();
   });
 
-  return conn.promise;
+  return nextConn.promise;
 }
 
 /**
@@ -398,7 +439,7 @@ export function stopQQBotMonitor(): void {
  */
 export function isQQBotMonitorActiveForAccount(accountId: string = DEFAULT_ACCOUNT_ID): boolean {
   const conn = activeConnections.get(accountId);
-  return conn?.socket !== null;
+  return Boolean(conn?.socket);
 }
 
 /**

@@ -1198,8 +1198,12 @@ export function evaluateReplyFinalOnlyDelivery(params: {
 
 function isQQBotC2CTarget(to: string): boolean {
   const trimmed = to.trim();
-  const raw = trimmed.startsWith("qqbot:") ? trimmed.slice("qqbot:".length) : trimmed;
-  return !raw.startsWith("group:") && !raw.startsWith("channel:");
+  const raw =
+    trimmed.slice(0, "qqbot:".length).toLowerCase() === "qqbot:"
+      ? trimmed.slice("qqbot:".length)
+      : trimmed;
+  const normalizedRaw = raw.toLowerCase();
+  return !normalizedRaw.startsWith("group:") && !normalizedRaw.startsWith("channel:");
 }
 
 function splitQQBotMarkdownTransportMediaUrls(mediaUrls: string[]): {

@@ -25,7 +25,7 @@ vi.mock("./proactive.js", () => ({
   upsertKnownQQBotTarget: proactiveMocks.upsertKnownQQBotTarget,
 }));
 
-import { handleQQBotDispatch } from "./bot.js";
+import { handleQQBotDispatch, resolveQQBotTextReplyRefs } from "./bot.js";
 
 function createLogger() {
   return {
@@ -279,6 +279,23 @@ describe("QQBot reported regressions", () => {
         }),
       })
     );
+  });
+
+  it("does not treat mixed-case group targets as c2c markdown deliveries", () => {
+    expect(
+      resolveQQBotTextReplyRefs({
+        to: "QQBOT:GROUP:g-upcase-1",
+        text: "| col1 | col2 |\n| --- | --- |\n| a | b |",
+        markdownSupport: true,
+        c2cMarkdownDeliveryMode: "proactive-table-only",
+        replyToId: "msg-upcase-1",
+        replyEventId: "evt-upcase-1",
+      })
+    ).toEqual({
+      forceProactive: false,
+      replyToId: "msg-upcase-1",
+      replyEventId: "evt-upcase-1",
+    });
   });
 
   it("sends visible group mention replies through the routed account", async () => {
