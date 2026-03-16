@@ -20,6 +20,7 @@ vi.mock("@clack/prompts", () => ({
 }));
 
 import { registerChinaSetupCli } from "./china-setup.js";
+import type { ChannelId } from "./china-setup.js";
 
 type ActionHandler = () => void | Promise<void>;
 
@@ -62,9 +63,11 @@ function createCommandNode(): CommandNode {
   return node;
 }
 
-async function runSetup(initialConfig: ConfigRoot, channels: string[] = ["wecom"]): Promise<{
+async function runSetup(
+  initialConfig: ConfigRoot,
+  channels: readonly ChannelId[] = ["wecom"]
+): Promise<{
   writeConfigFile: ReturnType<typeof vi.fn>;
-  channels?: string[];
 }> {
   let registrar:
     | ((ctx: { program: unknown; config?: unknown; logger?: LoggerLike }) => void | Promise<void>)
