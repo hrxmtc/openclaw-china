@@ -5,7 +5,7 @@ import { DEFAULT_WECOM_WS_URL } from "./config.js";
 import type { WecomReplyMsgItem } from "./ws-media.js";
 
 type JsonRecord = Record<string, unknown>;
-export type WecomWsNativeMediaType = "image" | "file";
+export type WecomWsNativeMediaType = "image" | "file" | "voice" | "video";
 
 export type WecomWsHeaders = {
   req_id?: string;

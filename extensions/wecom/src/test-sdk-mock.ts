@@ -224,6 +224,20 @@ export class WSClient extends EventEmitter {
     };
   }
 
+  async downloadFile(url: string, _aesKey?: string): Promise<{ buffer: Buffer; filename?: string }> {
+    let filename: string | undefined;
+    try {
+      const parsed = new URL(url);
+      filename = parsed.pathname.split("/").filter(Boolean).pop();
+    } catch {
+      filename = undefined;
+    }
+    return {
+      buffer: Buffer.from(`downloaded:${url}`, "utf8"),
+      filename,
+    };
+  }
+
   private async sendFrame(frame: WsFrame): Promise<WsFrame> {
     const socket = this.socket;
     if (!socket || socket.readyState !== WebSocket.OPEN) {

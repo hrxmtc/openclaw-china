@@ -4,6 +4,7 @@
 
 import path from "node:path";
 import { access } from "node:fs/promises";
+import { resolveFileCategory } from "@openclaw-china/shared";
 
 import type { ResolvedWecomAccount, WecomConfig } from "./types.js";
 import {
@@ -97,7 +98,7 @@ function parseDirectTarget(rawTarget: string): ParsedDirectTarget | null {
   return { accountId, kind: "user", id };
 }
 
-type OutboundMediaType = "image" | "file";
+type OutboundMediaType = "image" | "file" | "voice" | "video";
 
 function isHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value.trim());
@@ -116,16 +117,11 @@ async function ensureReadableFile(filePath: string): Promise<void> {
 }
 
 function detectOutboundMediaType(mediaUrl: string, mimeType?: string): OutboundMediaType {
-  const mime = String(mimeType ?? "")
-    .split(";")[0]
-    .trim()
-    .toLowerCase();
-  if (mime.startsWith("image/")) return "image";
-
-  const ext = path.extname(mediaUrl.split("?")[0] ?? "").toLowerCase();
-  if ([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"].includes(ext)) {
-    return "image";
-  }
+  const normalizedMediaUrl = mediaUrl.split("?")[0] ?? mediaUrl;
+  const category = resolveFileCategory(String(mimeType ?? ""), path.basename(normalizedMediaUrl));
+  if (category === "image") return "image";
+  if (category === "audio") return "voice";
+  if (category === "video") return "video";
   return "file";
 }
 
@@ -142,6 +138,10 @@ function buildMediaMarkdown(params: {
 
   if (params.mediaType === "image") {
     parts.push(`![](${params.mediaUrl})`);
+  } else if (params.mediaType === "voice") {
+    parts.push(`[语音文件](${params.mediaUrl})`);
+  } else if (params.mediaType === "video") {
+    parts.push(`[视频文件](${params.mediaUrl})`);
   } else {
     parts.push(`[下载文件](${params.mediaUrl})`);
   }
@@ -600,8 +600,7 @@ export const wecomPlugin = {
         const shouldUseNativeWsMedia =
           account.mode === "ws" &&
           !isHttpUrl(params.mediaUrl) &&
-          (localNativeMediaType === "file" ||
-            (localNativeMediaType === "image" && account.wsImageReplyMode === "native"));
+          (localNativeMediaType !== "image" || account.wsImageReplyMode === "native");
         if (shouldUseNativeWsMedia) {
           const localPath = normalizeLocalPath(params.mediaUrl);
           await ensureReadableFile(localPath);

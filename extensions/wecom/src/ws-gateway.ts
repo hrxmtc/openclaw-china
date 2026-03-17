@@ -313,6 +313,19 @@ export async function uploadWecomWsLocalMedia(params: {
   };
 }
 
+export async function downloadWecomWsMedia(params: {
+  accountId: string;
+  mediaUrl: string;
+  decryptionKey: string;
+}): Promise<{ buffer: Buffer; fileName?: string }> {
+  const client = requireActiveClient(params.accountId);
+  const result = await client.downloadFile(params.mediaUrl, params.decryptionKey);
+  return {
+    buffer: result.buffer,
+    fileName: result.filename?.trim() || undefined,
+  };
+}
+
 export async function sendWecomWsProactiveMedia(params: {
   accountId: string;
   to: string;
@@ -431,6 +444,12 @@ export async function startWecomWsGateway(opts: StartWecomWsGatewayOptions): Pro
         account,
         msg: callback.msg,
         core,
+        mediaDownloader: ({ mediaUrl, decryptionKey }) =>
+          downloadWecomWsMedia({
+            accountId: account.accountId,
+            mediaUrl,
+            decryptionKey,
+          }),
         hooks: {
           onAccepted: () => {
             void sendWecomWsMessagePlaceholder({
@@ -579,6 +598,12 @@ export async function startWecomWsGateway(opts: StartWecomWsGatewayOptions): Pro
         account,
         msg: callback.msg,
         core,
+        mediaDownloader: ({ mediaUrl, decryptionKey }) =>
+          downloadWecomWsMedia({
+            accountId: account.accountId,
+            mediaUrl,
+            decryptionKey,
+          }),
         hooks: {
           onChunk: async () => {
             // Event callbacks do not use text chunk replies in this transport adapter.
