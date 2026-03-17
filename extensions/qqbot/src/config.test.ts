@@ -9,6 +9,9 @@ import {
   resolveQQBotAutoSendLocalPathMedia,
   resolveQQBotASRCredentials,
   resolveQQBotCredentials,
+  resolveQQBotTypingHeartbeatIntervalMs,
+  resolveQQBotTypingHeartbeatMode,
+  resolveQQBotTypingInputSeconds,
 } from "./config.js";
 
 describe("QQBotConfigSchema", () => {
@@ -19,6 +22,9 @@ describe("QQBotConfigSchema", () => {
     expect(cfg.markdownSupport).toBe(true);
     expect(cfg.c2cMarkdownDeliveryMode).toBe("proactive-table-only");
     expect(cfg.c2cMarkdownChunkStrategy).toBe("markdown-block");
+    expect(resolveQQBotTypingHeartbeatMode(cfg)).toBe("idle");
+    expect(resolveQQBotTypingHeartbeatIntervalMs(cfg)).toBe(5000);
+    expect(resolveQQBotTypingInputSeconds(cfg)).toBe(60);
     expect(cfg.longTaskNoticeDelayMs).toBe(30000);
     expect(resolveQQBotAutoSendLocalPathMedia(cfg)).toBe(true);
     expect(resolveInboundMediaDir(cfg)).toBe(join(homedir(), ".openclaw", "media", "qqbot", "inbound"));
@@ -31,6 +37,9 @@ describe("QQBotConfigSchema", () => {
     expect(() => QQBotConfigSchema.parse({ longTaskNoticeDelayMs: -1 })).toThrow();
     expect(() => QQBotConfigSchema.parse({ c2cMarkdownDeliveryMode: "invalid" })).toThrow();
     expect(() => QQBotConfigSchema.parse({ c2cMarkdownChunkStrategy: "invalid" })).toThrow();
+    expect(() => QQBotConfigSchema.parse({ typingHeartbeatMode: "invalid" })).toThrow();
+    expect(() => QQBotConfigSchema.parse({ typingHeartbeatIntervalMs: 0 })).toThrow();
+    expect(() => QQBotConfigSchema.parse({ typingInputSeconds: 0 })).toThrow();
   });
 
   it("resolves custom inbound media settings", () => {
@@ -172,6 +181,32 @@ describe("QQBotConfigSchema", () => {
     );
 
     expect(merged.c2cMarkdownChunkStrategy).toBe("markdown-block");
+  });
+
+  it("allows account-level override for typing heartbeat config", () => {
+    const merged = mergeQQBotAccountConfig(
+      {
+        channels: {
+          qqbot: {
+            typingHeartbeatMode: "idle",
+            typingHeartbeatIntervalMs: 5000,
+            typingInputSeconds: 60,
+            accounts: {
+              main: {
+                typingHeartbeatMode: "always",
+                typingHeartbeatIntervalMs: 3000,
+                typingInputSeconds: 90,
+              },
+            },
+          },
+        },
+      },
+      "main"
+    );
+
+    expect(resolveQQBotTypingHeartbeatMode(merged)).toBe("always");
+    expect(resolveQQBotTypingHeartbeatIntervalMs(merged)).toBe(3000);
+    expect(resolveQQBotTypingInputSeconds(merged)).toBe(90);
   });
 
   it("normalizes runtime numeric credentials without schema parse", () => {

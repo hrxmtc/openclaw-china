@@ -128,11 +128,16 @@
 
 <details>
 <summary><strong>点击展开更新日志</strong></summary>
+  
+### 2026-03-17
+
+- `qqbot` 优化了 QQ 私聊长思考时的 `对方正在输入中` 指示。收到 C2C 消息后会先发一次 typing，并支持通过配置切换为不续发、按空档续发或固定间隔续发。
+- 同步补充文档说明：这项能力对应 QQ 平台的 typing 指示，不等同于客户端自己的临时 loading 气泡常驻；如果你希望长思考时更早给用户稳定的可见反馈，建议把 `channels.qqbot.longTaskNoticeDelayMs` 调低到 `5000` 到 `10000`。
 
 ### 2026-03-16
+
 - 新增 `wecom-kf` 微信客服渠道，打通首版最小闭环：支持回调 `GET/POST` 验证、`sync_msg` 拉取真实消息、外部微信用户文本消息入站、Agent 文本回复回发，以及 `enter_session` 欢迎语。
 - `openclaw china setup` 和统一渠道包现在已支持 `WeCom KF（微信客服）`，可直接录入 `corpId`、微信客服 `Secret`、回调 `Token` / `EncodingAESKey`、`openKfId` 等参数，并补齐相关类型与测试。
-
 
 ### 2026-03-15
 - `qqbot` 新增 `停止` / `/stop` 快速通道。当前任务正在执行时，这类中断命令会绕过本地排队立即发送给 OpenClaw，并丢弃同一会话里尚未处理的排队消息，减少“停不下来还继续串消息”的情况。
@@ -458,7 +463,13 @@ openclaw config set channels.qqbot.clientSecret your-app-secret
 openclaw config set channels.qqbot.markdownSupport true
 openclaw config set channels.qqbot.c2cMarkdownDeliveryMode proactive-all
 openclaw config set channels.qqbot.c2cMarkdownChunkStrategy markdown-block
+openclaw config set channels.qqbot.typingHeartbeatMode idle
+openclaw config set channels.qqbot.typingHeartbeatIntervalMs 5000
+openclaw config set channels.qqbot.typingInputSeconds 60
 openclaw config set channels.qqbot.autoSendLocalPathMedia false
+
+# 如果你希望长思考时更早出现稳定的可见消息，可选：
+openclaw config set channels.qqbot.longTaskNoticeDelayMs 5000
 ```
 
 也可以直接使用一条命令完成接入：
@@ -500,6 +511,14 @@ openclaw config set channels.qqbot.c2cMarkdownChunkStrategy markdown-block
 - `markdown-block`：默认值。优先按标题、表格、引用、分割线、代码块、列表和正文块这些安全边界切分；`replyFinalOnly=false` 时还会先合并连续的结构化 Markdown，再把 tool/log 文本按原顺序单独发出
 - `length`：回退旧行为，继续按长度直接切分
 - 这套安全切分只作用于 `markdownSupport=true` 的 QQ 私聊/C2C Markdown；群聊、频道和普通文本发送保持原样
+
+补充说明：
+
+- QQ 私聊现在会尽量续发 QQ 平台提供的“对方正在输入中”指示，减少长任务期间完全没反馈的情况
+- `typingHeartbeatMode` 控制续发策略：`none` 只发首个 typing，`idle` 只在回复空档续发，`always` 会固定间隔续发到整轮回复结束
+- `typingHeartbeatIntervalMs` 和 `typingInputSeconds` 分别控制续发周期与单次 QQ typing 有效时长
+- 这不等于 QQ 客户端自己的临时 loading 气泡会一直保留，那部分不是插件能完全控制的
+- 如果你希望用户更早看到稳定的可见消息，优先把 `longTaskNoticeDelayMs` 调低到 `5000` 到 `10000`
 - 在 QQ 私聊启用 Markdown transport（`markdownSupport=true`）后，开启 `/verbose on` 且 `replyFinalOnly=false` 时，非 final 的工具/日志输出会即时回发，一个日志一个消息
 - 如果同时开启 `replyFinalOnly=true`，非 final 纯文本日志仍会被抑制，只保留最终回复；媒体类工具结果不受影响
 - 如果你发现“不带表格时基本正常，但带表格后标题、引用、任务列表不稳定”，优先使用 `proactive-all`；这通常是 QQ 被动回复接口本身的渲染限制

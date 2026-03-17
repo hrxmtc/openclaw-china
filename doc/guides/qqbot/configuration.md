@@ -127,9 +127,15 @@ openclaw config set channels.qqbot.textChunkLimit 1500
 openclaw config set channels.qqbot.replyFinalOnly false
 openclaw config set channels.qqbot.c2cMarkdownDeliveryMode proactive-table-only
 openclaw config set channels.qqbot.c2cMarkdownChunkStrategy markdown-block
+openclaw config set channels.qqbot.typingHeartbeatMode idle
+openclaw config set channels.qqbot.typingHeartbeatIntervalMs 5000
+openclaw config set channels.qqbot.typingInputSeconds 60
 openclaw config set channels.qqbot.autoSendLocalPathMedia true
 openclaw config set channels.qqbot.longTaskNoticeDelayMs 30000
 openclaw config set gateway.http.endpoints.chatCompletions.enabled true
+
+# 如果你希望长思考时更早给到稳定的可见消息，可选：
+openclaw config set channels.qqbot.longTaskNoticeDelayMs 5000
 ```
 
 如果你只是想先把 QQ 机器人跑起来，前 3 行基本就够了，后面这些配置大多数场景保持默认即可。
@@ -140,7 +146,7 @@ openclaw config set gateway.http.endpoints.chatCompletions.enabled true
 
 - 必填：`enabled`、`appId`、`clientSecret`
 - 通常保持默认即可：`dmPolicy`、`groupPolicy`、`requireMention`、`textChunkLimit`
-- 需要调交互体验时再看：`replyFinalOnly`、`c2cMarkdownDeliveryMode`、`c2cMarkdownChunkStrategy`、`autoSendLocalPathMedia`、`longTaskNoticeDelayMs`
+- 需要调交互体验时再看：`replyFinalOnly`、`c2cMarkdownDeliveryMode`、`c2cMarkdownChunkStrategy`、`typingHeartbeatMode`、`typingHeartbeatIntervalMs`、`typingInputSeconds`、`autoSendLocalPathMedia`、`longTaskNoticeDelayMs`
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
@@ -157,9 +163,20 @@ openclaw config set gateway.http.endpoints.chatCompletions.enabled true
 | replyFinalOnly | boolean | false | 是否只发最终答案。`false` 时，QQ 私聊配合 `/verbose on` 会把 assistant 过渡说明和 tool 日志按真实顺序实时分条回发；`true` 时不发普通中间文本，但图片、语音这类媒体结果仍可正常发送 |
 | c2cMarkdownDeliveryMode | string | "proactive-table-only" | QQ 私聊里 Markdown 用什么方式发。默认只在“带表格”时切到更稳的方式；如果格式老是乱，可以改成 `proactive-all` |
 | c2cMarkdownChunkStrategy | string | "markdown-block" | QQ 私聊长 Markdown 的切分策略。默认优先按标题、表格、引用、分隔线、代码块等安全边界切分；如需回退旧行为可改成 `length` |
+| typingHeartbeatMode | string | "idle" | QQ 私聊 `对方正在输入中` 的续发策略。`none` 只发首个 typing；`idle` 只在回复空档续发；`always` 固定间隔续发到整轮回复结束 |
+| typingHeartbeatIntervalMs | number | 5000 | typing 续发周期，单位毫秒。仅在 `typingHeartbeatMode` 不为 `none` 时生效 |
+| typingInputSeconds | number | 60 | 单次发送给 QQ 平台的 typing 有效时长，单位秒 |
 | autoSendLocalPathMedia | boolean | true | 是否把回复里的本地图片路径自动当成图片发出去。关掉后，路径会原样保留在文本里 |
 | longTaskNoticeDelayMs | number | 30000 | 多久还没正式回复，就先补一句“我还在处理”。设为 `0` 可关闭 |
 
+补充说明：
+
+- QQ 私聊现在会尽量续发 QQ 平台提供的“对方正在输入中”指示，减少长思考时完全没反馈的情况
+- `typingHeartbeatMode=idle` 是默认值，更接近“有空档才提示还在处理”
+- 如果你更想尽量让 `对方正在输入中` 一直存在，可以改成 `typingHeartbeatMode=always`
+- 如果你只想保留首个 typing，不做续发，可以改成 `typingHeartbeatMode=none`
+- 这不等于 QQ 客户端自己的临时 loading 气泡会一直保留，那部分不是插件能完全控制的
+- 如果你更看重“几秒内一定看到一条可见反馈”，建议把 `longTaskNoticeDelayMs` 调低到 `5000` 到 `10000`
 
 
 ### 2.1 引用消息上下文（REFIDX）
@@ -238,6 +255,7 @@ openclaw config set channels.qqbot.c2cMarkdownChunkStrategy markdown-block
 - 你应该看到“说明 -> 日志 -> 说明 -> 日志”这类自然交错，而不是所有日志先发完、最后再补说明
 - 如果你把 `replyFinalOnly=true` 打开，普通中间文本就不发了，只保留最终答案；媒体结果不受影响
 - 这套实时回发语义当前只覆盖 QQ 私聊/C2C，群聊和频道仍保持现有行为
+- QQ 私聊还会按 `typingHeartbeatMode` 续发 QQ 平台提供的“对方正在输入中”；如果客户端没有一直显示 loading 气泡，优先通过较低的 `longTaskNoticeDelayMs` 补足可见消息
 - 如果当前任务卡住或你不想再等，可以在 QQ 私聊里直接发送 `停止` 或 `/stop`；这类中断命令会优先执行，并清掉同一会话里还没处理到的排队消息
 
 ### 3.3 验证 `/verbose on` 实时输出

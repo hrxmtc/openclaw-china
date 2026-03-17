@@ -10,6 +10,7 @@ import {
   resolveQQBotNoReplyFallback,
   sanitizeQQBotOutboundText,
   sendQQBotMediaWithFallback,
+  startQQBotTypingHeartbeat,
   startLongTaskNoticeTimer,
 } from "./bot.js";
 
@@ -398,6 +399,73 @@ describe("isQQBotGroupMessageInterfaceBlocked", () => {
 
   it("ignores unrelated errors", () => {
     expect(isQQBotGroupMessageInterfaceBlocked("HTTP 500: Internal Server Error")).toBe(false);
+  });
+});
+
+describe("startQQBotTypingHeartbeat", () => {
+  it("renews typing every interval and stops after dispose", async () => {
+    vi.useFakeTimers();
+    const renew = vi.fn().mockResolvedValue(undefined);
+
+    const heartbeat = startQQBotTypingHeartbeat({
+      intervalMs: 5000,
+      renew,
+    });
+
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(renew).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(renew).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(renew).toHaveBeenCalledTimes(2);
+
+    heartbeat.dispose();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(renew).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it("waits for an idle gap before renewing typing", async () => {
+    vi.useFakeTimers();
+    let idle = false;
+    const renew = vi.fn().mockResolvedValue(undefined);
+
+    startQQBotTypingHeartbeat({
+      intervalMs: 5000,
+      shouldRenew: () => idle,
+      renew,
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(renew).not.toHaveBeenCalled();
+
+    idle = true;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(renew).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
+  });
+
+  it("stops typing renewals cleanly and swallows renewal failures", async () => {
+    vi.useFakeTimers();
+    const renew = vi.fn().mockRejectedValue(new Error("temporary failure"));
+
+    const heartbeat = startQQBotTypingHeartbeat({
+      intervalMs: 5000,
+      renew,
+    });
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(renew).toHaveBeenCalledTimes(1);
+
+    heartbeat.stop();
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(renew).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
   });
 });
 

@@ -28,6 +28,9 @@ import {
   resolveInboundMediaKeepDays,
   resolveInboundMediaTempDir,
   resolveQQBotAutoSendLocalPathMedia,
+  resolveQQBotTypingHeartbeatIntervalMs,
+  resolveQQBotTypingHeartbeatMode,
+  resolveQQBotTypingInputSeconds,
   mergeQQBotAccountConfig,
   DEFAULT_ACCOUNT_ID,
   type QQBotC2CMarkdownChunkStrategy,
@@ -650,6 +653,11 @@ type LongTaskNoticeController = {
   dispose: () => void;
 };
 
+type QQBotTypingHeartbeatController = {
+  stop: () => void;
+  dispose: () => void;
+};
+
 export function startLongTaskNoticeTimer(params: {
   delayMs: number;
   logger: Pick<Logger, "warn">;
@@ -689,6 +697,48 @@ export function startLongTaskNoticeTimer(params: {
       completed = true;
       clear();
     },
+  };
+}
+
+export function startQQBotTypingHeartbeat(params: {
+  intervalMs: number;
+  renew: () => Promise<void>;
+  shouldRenew?: () => boolean;
+}): QQBotTypingHeartbeatController {
+  const { intervalMs, renew, shouldRenew } = params;
+  let stopped = false;
+  let timer: ReturnType<typeof setInterval> | null = null;
+  let renewalInFlight = false;
+
+  const clear = () => {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+  };
+
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clear();
+  };
+
+  if (intervalMs > 0) {
+    timer = setInterval(() => {
+      if (stopped || renewalInFlight) return;
+      if (shouldRenew && !shouldRenew()) return;
+      renewalInFlight = true;
+      void renew()
+        .catch(() => undefined)
+        .finally(() => {
+          renewalInFlight = false;
+        });
+    }, intervalMs);
+    timer.unref?.();
+  }
+
+  return {
+    stop,
+    dispose: stop,
   };
 }
 
@@ -2455,6 +2505,9 @@ async function dispatchToAgent(params: {
   };
   const target = resolveChatTarget(inbound);
   const outboundAccountId = route.accountId ?? accountId;
+  const typingHeartbeatMode = resolveQQBotTypingHeartbeatMode(qqCfg);
+  const typingHeartbeatIntervalMs = resolveQQBotTypingHeartbeatIntervalMs(qqCfg);
+  const typingInputSeconds = resolveQQBotTypingInputSeconds(qqCfg);
   let typingRefIdx: string | undefined;
   if (inbound.c2cOpenid && !isFastAbortCommand && !shouldSuppressVisibleReplies()) {
     const typing = await qqbotOutbound.sendTyping({
@@ -2462,7 +2515,7 @@ async function dispatchToAgent(params: {
       to: `user:${inbound.c2cOpenid}`,
       replyToId: inbound.messageId,
       replyEventId: inbound.eventId,
-      inputSecond: 60,
+      inputSecond: typingInputSeconds,
       accountId: outboundAccountId,
     });
     if (typing.error) {
@@ -2480,9 +2533,14 @@ async function dispatchToAgent(params: {
 
   let replyDelivered = false;
   let groupMessageInterfaceBlocked = false;
+  let lastVisibleOutboundAt = Date.now();
+  let typingHeartbeat: QQBotTypingHeartbeatController | null = null;
   const markReplyDelivered = () => {
     replyDelivered = true;
     longTaskNotice.markReplyDelivered();
+  };
+  const markVisibleOutboundStarted = () => {
+    lastVisibleOutboundAt = Date.now();
   };
   const markGroupMessageInterfaceBlocked = (error?: string) => {
     if (!isQQBotGroupMessageInterfaceBlocked(error)) return;
@@ -2492,11 +2550,47 @@ async function dispatchToAgent(params: {
     groupMessageInterfaceBlocked = true;
   };
 
+  if (
+    inbound.c2cOpenid &&
+    typingHeartbeatMode !== "none" &&
+    !isFastAbortCommand &&
+    !shouldSuppressVisibleReplies()
+  ) {
+    typingHeartbeat = startQQBotTypingHeartbeat({
+      intervalMs: typingHeartbeatIntervalMs,
+      shouldRenew: () => {
+        if (shouldSuppressVisibleReplies()) {
+          return false;
+        }
+        if (typingHeartbeatMode === "always") {
+          return true;
+        }
+        return Date.now() - lastVisibleOutboundAt >= typingHeartbeatIntervalMs;
+      },
+      renew: async () => {
+        try {
+          const typing = await qqbotOutbound.sendTyping({
+            cfg: { channels: { qqbot: qqCfg } },
+            to: `user:${inbound.c2cOpenid}`,
+            replyToId: inbound.messageId,
+            replyEventId: inbound.eventId,
+            inputSecond: typingInputSeconds,
+            accountId: outboundAccountId,
+          });
+          void typing;
+        } catch {
+          // Best effort only. Renewal failure should not affect reply flow.
+        }
+      },
+    });
+  }
+
   const longTaskNotice = startLongTaskNoticeTimer({
     delayMs: qqCfg.longTaskNoticeDelayMs ?? DEFAULT_LONG_TASK_NOTICE_DELAY_MS,
     logger,
     sendNotice: async () => {
       if (groupMessageInterfaceBlocked || isFastAbortCommand || shouldSuppressVisibleReplies()) return;
+      markVisibleOutboundStarted();
       const result = await qqbotOutbound.sendText({
         cfg: { channels: { qqbot: qqCfg } },
         to: target.to,
@@ -2509,7 +2603,7 @@ async function dispatchToAgent(params: {
         logger.warn(`send long-task notice failed: ${result.error}`);
         markGroupMessageInterfaceBlocked(result.error);
       } else {
-        replyDelivered = true;
+        markReplyDelivered();
       }
     },
   });
@@ -2542,6 +2636,7 @@ async function dispatchToAgent(params: {
       if (shouldSuppressVisibleReplies()) {
         return;
       }
+      markVisibleOutboundStarted();
       const fallback = await qqbotOutbound.sendText({
         cfg: { channels: { qqbot: qqCfg } },
         to: target.to,
@@ -2554,7 +2649,7 @@ async function dispatchToAgent(params: {
         logger.error(`sendText ASR fallback failed: ${fallback.error}`);
         markGroupMessageInterfaceBlocked(fallback.error);
       } else {
-        replyDelivered = true;
+        markReplyDelivered();
       }
       return;
     }
@@ -2812,6 +2907,9 @@ async function dispatchToAgent(params: {
       );
 
       if (!shouldSuppressVisibleReplies()) {
+        if (mediaQueue.length > 0) {
+          markVisibleOutboundStarted();
+        }
         await sendQQBotMediaWithFallback({
           qqCfg,
           to: target.to,
@@ -2843,6 +2941,7 @@ async function dispatchToAgent(params: {
           `delivery=${deliveryLabel} segment=1/1 chunk=${chunkIndex + 1}/${textChunks.length} ` +
             `phase=${params.phase} preview=${formatQQBotOutboundPreview(chunk)}`
         );
+        markVisibleOutboundStarted();
         const result = await qqbotOutbound.sendText({
           cfg: { channels: { qqbot: qqCfg } },
           to: target.to,
@@ -2988,6 +3087,7 @@ async function dispatchToAgent(params: {
           if (shouldSuppressVisibleReplies()) {
             return;
           }
+          markVisibleOutboundStarted();
           const result = await qqbotOutbound.sendText({
             cfg: { channels: { qqbot: qqCfg } },
             to: target.to,
@@ -3009,6 +3109,9 @@ async function dispatchToAgent(params: {
         return;
       }
 
+      if (mediaQueue.length > 0) {
+        markVisibleOutboundStarted();
+      }
       await sendQQBotMediaWithFallback({
         qqCfg,
         to: target.to,
@@ -3130,6 +3233,7 @@ async function dispatchToAgent(params: {
       !shouldSuppressVisibleReplies()
     ) {
       logger.info("no visible reply generated for group mention; sending fallback text");
+      markVisibleOutboundStarted();
       const fallbackResult = await qqbotOutbound.sendText({
         cfg: { channels: { qqbot: qqCfg } },
         to: target.to,
@@ -3146,6 +3250,7 @@ async function dispatchToAgent(params: {
       }
     }
   } finally {
+    typingHeartbeat?.dispose();
     longTaskNotice.dispose();
     try {
       await pruneInboundMediaDir({

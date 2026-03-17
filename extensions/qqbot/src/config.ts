@@ -33,6 +33,17 @@ export const QQBotC2CMarkdownChunkStrategySchema = z
 
 export type QQBotC2CMarkdownChunkStrategy = z.input<typeof QQBotC2CMarkdownChunkStrategySchema>;
 
+export const QQBotTypingHeartbeatModeSchema = z
+  .enum(["none", "idle", "always"])
+  .optional()
+  .default("idle");
+
+export type QQBotTypingHeartbeatMode = z.input<typeof QQBotTypingHeartbeatModeSchema>;
+
+export const DEFAULT_QQBOT_TYPING_HEARTBEAT_MODE = "idle";
+export const DEFAULT_QQBOT_TYPING_HEARTBEAT_INTERVAL_MS = 5000;
+export const DEFAULT_QQBOT_TYPING_INPUT_SECONDS = 60;
+
 // ── Account-level Schema ──────────────────────────────────────────────────────
 
 const QQBotAccountSchema = z.object({
@@ -52,6 +63,13 @@ const QQBotAccountSchema = z.object({
   markdownSupport: z.boolean().optional().default(true),
   c2cMarkdownDeliveryMode: QQBotC2CMarkdownDeliveryModeSchema,
   c2cMarkdownChunkStrategy: QQBotC2CMarkdownChunkStrategySchema,
+  typingHeartbeatMode: QQBotTypingHeartbeatModeSchema,
+  typingHeartbeatIntervalMs: z.number().int().positive().optional().default(
+    DEFAULT_QQBOT_TYPING_HEARTBEAT_INTERVAL_MS
+  ),
+  typingInputSeconds: z.number().int().positive().optional().default(
+    DEFAULT_QQBOT_TYPING_INPUT_SECONDS
+  ),
   dmPolicy: z.enum(["open", "pairing", "allowlist"]).optional().default("open"),
   groupPolicy: z.enum(["open", "allowlist", "disabled"]).optional().default("open"),
   requireMention: z.boolean().optional().default(true),
@@ -118,6 +136,24 @@ export function resolveQQBotAutoSendLocalPathMedia(
   config: QQBotAccountConfig | undefined
 ): boolean {
   return config?.autoSendLocalPathMedia ?? true;
+}
+
+export function resolveQQBotTypingHeartbeatMode(
+  config: QQBotAccountConfig | undefined
+): QQBotTypingHeartbeatMode {
+  return config?.typingHeartbeatMode ?? DEFAULT_QQBOT_TYPING_HEARTBEAT_MODE;
+}
+
+export function resolveQQBotTypingHeartbeatIntervalMs(
+  config: QQBotAccountConfig | undefined
+): number {
+  return config?.typingHeartbeatIntervalMs ?? DEFAULT_QQBOT_TYPING_HEARTBEAT_INTERVAL_MS;
+}
+
+export function resolveQQBotTypingInputSeconds(
+  config: QQBotAccountConfig | undefined
+): number {
+  return config?.typingInputSeconds ?? DEFAULT_QQBOT_TYPING_INPUT_SECONDS;
 }
 
 export function resolveInboundMediaTempDir(): string {

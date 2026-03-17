@@ -1,6 +1,7 @@
 import type {
   QQBotC2CMarkdownChunkStrategy,
   QQBotC2CMarkdownDeliveryMode,
+  QQBotTypingHeartbeatMode,
 } from "./config.js";
 
 export type {
@@ -9,6 +10,7 @@ export type {
   PluginConfig,
   QQBotC2CMarkdownChunkStrategy,
   QQBotC2CMarkdownDeliveryMode,
+  QQBotTypingHeartbeatMode,
 } from "./config.js";
 
 export interface ResolvedQQBotAccount {
@@ -19,6 +21,7 @@ export interface ResolvedQQBotAccount {
   markdownSupport?: boolean;
   c2cMarkdownDeliveryMode?: QQBotC2CMarkdownDeliveryMode;
   c2cMarkdownChunkStrategy?: QQBotC2CMarkdownChunkStrategy;
+  typingHeartbeatMode?: QQBotTypingHeartbeatMode;
 }
 
 export interface QQBotSendResult {

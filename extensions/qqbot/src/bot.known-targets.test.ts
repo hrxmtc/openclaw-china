@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearQQBotRuntime, setQQBotRuntime } from "./runtime.js";
+import { LONG_TASK_NOTICE_TEXT, handleQQBotDispatch } from "./bot.js";
 
 const outboundMocks = vi.hoisted(() => ({
   sendTyping: vi.fn(),
@@ -24,8 +25,6 @@ vi.mock("./proactive.js", () => ({
   getKnownQQBotTarget: proactiveMocks.getKnownQQBotTarget,
   upsertKnownQQBotTarget: proactiveMocks.upsertKnownQQBotTarget,
 }));
-
-import { handleQQBotDispatch } from "./bot.js";
 
 function createLogger() {
   return {
@@ -137,6 +136,7 @@ describe("QQBot inbound known-target recording", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     clearQQBotRuntime();
   });
 
@@ -754,6 +754,309 @@ describe("QQBot direct session isolation", () => {
         accountId: "bot2",
       })
     );
+  });
+
+  it("resumes direct typing during idle gaps between visible replies", async () => {
+    vi.useFakeTimers();
+    const logger = createLogger();
+    const multiAccountCfg = {
+      channels: {
+        qqbot: {
+          ...baseCfg.channels.qqbot,
+          accounts: {
+            bot2: {
+              enabled: true,
+              appId: "app-2",
+              clientSecret: "secret-2",
+            },
+          },
+        },
+      },
+    };
+
+    setupSessionRuntime({
+      dispatchReplyWithBufferedBlockDispatcher: vi.fn(async ({ dispatcherOptions }) => {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await dispatcherOptions.deliver({ text: "reply chunk 1" }, { kind: "block" });
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+        await dispatcherOptions.deliver({ text: "reply chunk 2" }, { kind: "final" });
+      }),
+    });
+
+    const dispatchPromise = handleQQBotDispatch({
+      eventType: "C2C_MESSAGE_CREATE",
+      eventData: {
+        id: "msg-bot2-heartbeat",
+        event_id: "evt-bot2-heartbeat",
+        content: "hello delayed bot2",
+        timestamp: 1700000004550,
+        author: {
+          user_openid: "u-bot2-heartbeat",
+          username: "Bot Two Heartbeat User",
+        },
+      },
+      cfg: multiAccountCfg,
+      accountId: "bot2",
+      logger,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(11000);
+
+    expect(outboundMocks.sendTyping).toHaveBeenCalledTimes(2);
+    expect(outboundMocks.sendText).toHaveBeenCalledTimes(1);
+    for (const call of outboundMocks.sendTyping.mock.calls) {
+      expect(call[0]).toEqual(
+        expect.objectContaining({
+          to: "user:u-bot2-heartbeat",
+          accountId: "bot2",
+        })
+      );
+    }
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await dispatchPromise;
+
+    expect(outboundMocks.sendText).toHaveBeenCalledTimes(2);
+    expect(outboundMocks.sendText).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        to: "user:u-bot2-heartbeat",
+        text: "reply chunk 1",
+        accountId: "bot2",
+      })
+    );
+    expect(outboundMocks.sendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        to: "user:u-bot2-heartbeat",
+        text: "reply chunk 2",
+        accountId: "bot2",
+      })
+    );
+    expect(
+      outboundMocks.sendTyping.mock.invocationCallOrder[1] ?? Number.POSITIVE_INFINITY
+    ).toBeGreaterThan(outboundMocks.sendText.mock.invocationCallOrder[0] ?? 0);
+    expect(
+      outboundMocks.sendTyping.mock.invocationCallOrder[1] ?? Number.POSITIVE_INFINITY
+    ).toBeLessThan(outboundMocks.sendText.mock.invocationCallOrder[1] ?? Number.POSITIVE_INFINITY);
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(outboundMocks.sendTyping).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps renewing direct typing on a fixed interval when mode is always", async () => {
+    vi.useFakeTimers();
+    const logger = createLogger();
+    const multiAccountCfg = {
+      channels: {
+        qqbot: {
+          ...baseCfg.channels.qqbot,
+          typingHeartbeatMode: "always",
+          typingHeartbeatIntervalMs: 3000,
+          accounts: {
+            bot2: {
+              enabled: true,
+              appId: "app-2",
+              clientSecret: "secret-2",
+            },
+          },
+        },
+      },
+    };
+
+    setupSessionRuntime({
+      dispatchReplyWithBufferedBlockDispatcher: vi.fn(async ({ dispatcherOptions }) => {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await dispatcherOptions.deliver({ text: "reply chunk 1" }, { kind: "block" });
+        await new Promise((resolve) => setTimeout(resolve, 6000));
+        await dispatcherOptions.deliver({ text: "reply chunk 2" }, { kind: "final" });
+      }),
+    });
+
+    const dispatchPromise = handleQQBotDispatch({
+      eventType: "C2C_MESSAGE_CREATE",
+      eventData: {
+        id: "msg-bot2-heartbeat-always",
+        event_id: "evt-bot2-heartbeat-always",
+        content: "hello fixed interval bot2",
+        timestamp: 1700000004575,
+        author: {
+          user_openid: "u-bot2-heartbeat-always",
+          username: "Bot Two Always User",
+        },
+      },
+      cfg: multiAccountCfg,
+      accountId: "bot2",
+      logger,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(6000);
+
+    expect(outboundMocks.sendTyping).toHaveBeenCalledTimes(3);
+    for (const call of outboundMocks.sendTyping.mock.calls) {
+      expect(call[0]).toEqual(
+        expect.objectContaining({
+          to: "user:u-bot2-heartbeat-always",
+          accountId: "bot2",
+        })
+      );
+    }
+    expect(outboundMocks.sendText).toHaveBeenCalledTimes(1);
+    expect(outboundMocks.sendText).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        to: "user:u-bot2-heartbeat-always",
+        text: "reply chunk 1",
+        accountId: "bot2",
+      })
+    );
+    expect(
+      outboundMocks.sendTyping.mock.invocationCallOrder[1] ?? Number.POSITIVE_INFINITY
+    ).toBeGreaterThan(outboundMocks.sendText.mock.invocationCallOrder[0] ?? 0);
+    expect(
+      outboundMocks.sendTyping.mock.invocationCallOrder[2] ?? Number.POSITIVE_INFINITY
+    ).toBeGreaterThan(outboundMocks.sendTyping.mock.invocationCallOrder[1] ?? 0);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await dispatchPromise;
+
+    expect(outboundMocks.sendText).toHaveBeenCalledTimes(2);
+    expect(outboundMocks.sendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        to: "user:u-bot2-heartbeat-always",
+        text: "reply chunk 2",
+        accountId: "bot2",
+      })
+    );
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(outboundMocks.sendTyping).toHaveBeenCalledTimes(3);
+  });
+
+  it("disables typing renewals when mode is none", async () => {
+    vi.useFakeTimers();
+    const logger = createLogger();
+
+    setupSessionRuntime({
+      dispatchReplyWithBufferedBlockDispatcher: vi.fn(async ({ dispatcherOptions }) => {
+        await new Promise((resolve) => setTimeout(resolve, 11000));
+        await dispatcherOptions.deliver({ text: "final only reply" }, { kind: "final" });
+      }),
+    });
+
+    const dispatchPromise = handleQQBotDispatch({
+      eventType: "C2C_MESSAGE_CREATE",
+      eventData: {
+        id: "msg-no-heartbeat",
+        event_id: "evt-no-heartbeat",
+        content: "hello no heartbeat",
+        timestamp: 1700000004585,
+        author: {
+          user_openid: "u-no-heartbeat",
+          username: "No Heartbeat User",
+        },
+      },
+      cfg: {
+        channels: {
+          qqbot: {
+            ...baseCfg.channels.qqbot,
+            typingHeartbeatMode: "none",
+          },
+        },
+      },
+      accountId: "default",
+      logger,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(11000);
+    await dispatchPromise;
+
+    expect(outboundMocks.sendTyping).toHaveBeenCalledTimes(1);
+    expect(outboundMocks.sendTyping).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "user:u-no-heartbeat",
+        accountId: "default",
+      })
+    );
+    expect(outboundMocks.sendText).toHaveBeenCalledTimes(1);
+    expect(outboundMocks.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "user:u-no-heartbeat",
+        text: "final only reply",
+        accountId: "default",
+      })
+    );
+
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(outboundMocks.sendTyping).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps typing heartbeat alive after long-task notice when the task is still running", async () => {
+    vi.useFakeTimers();
+    const logger = createLogger();
+
+    setupSessionRuntime({
+      dispatchReplyWithBufferedBlockDispatcher: vi.fn(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 22000));
+      }),
+    });
+
+    const dispatchPromise = handleQQBotDispatch({
+      eventType: "C2C_MESSAGE_CREATE",
+      eventData: {
+        id: "msg-long-task-heartbeat",
+        event_id: "evt-long-task-heartbeat",
+        content: "hello slow task",
+        timestamp: 1700000004600,
+        author: {
+          user_openid: "u-long-task",
+          username: "Slow User",
+        },
+      },
+      cfg: {
+        channels: {
+          qqbot: {
+            ...baseCfg.channels.qqbot,
+            longTaskNoticeDelayMs: 12000,
+          },
+        },
+      },
+      accountId: "default",
+      logger,
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(11000);
+
+    expect(outboundMocks.sendTyping).toHaveBeenCalledTimes(3);
+    expect(outboundMocks.sendText).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(outboundMocks.sendText).toHaveBeenCalledTimes(1);
+    expect(outboundMocks.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "user:u-long-task",
+        text: LONG_TASK_NOTICE_TEXT,
+        accountId: "default",
+      })
+    );
+    expect(
+      outboundMocks.sendTyping.mock.invocationCallOrder[2] ?? Number.POSITIVE_INFINITY
+    ).toBeLessThan(outboundMocks.sendText.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY);
+
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(outboundMocks.sendTyping).toHaveBeenCalledTimes(4);
+    expect(
+      outboundMocks.sendTyping.mock.invocationCallOrder[3] ?? 0
+    ).toBeGreaterThan(outboundMocks.sendText.mock.invocationCallOrder[0] ?? 0);
+    await vi.advanceTimersByTimeAsync(2000);
+    await dispatchPromise;
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(outboundMocks.sendTyping).toHaveBeenCalledTimes(4);
   });
 
   it("isolates the same direct sender across different qqbot accounts", async () => {
