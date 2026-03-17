@@ -4,6 +4,7 @@
   "description": "企业微信自建应用消息渠道插件（支持主动推送）",
   "version": "0.1.0",
   "channels": ["wecom-app"],
+  "skills": ["./skills"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -14,6 +15,20 @@
       "corpSecret": { "type": "string" },
       "agentId": { "type": "number" },
       "apiBaseUrl": { "type": "string" },
+      "docs": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mcp": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": { "type": "string" },
+              "url": { "type": "string" }
+            }
+          }
+        }
+      },
       "webhookPath": { "type": "string" },
       "token": { "type": "string" },
       "encodingAESKey": { "type": "string" },
@@ -49,6 +64,20 @@
             "corpSecret": { "type": "string" },
             "agentId": { "type": "number" },
             "apiBaseUrl": { "type": "string" },
+            "docs": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mcp": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": { "type": "string" },
+                    "url": { "type": "string" }
+                  }
+                }
+              }
+            },
             "webhookPath": { "type": "string" },
             "token": { "type": "string" },
             "encodingAESKey": { "type": "string" },
@@ -79,6 +108,8 @@
   "uiHints": {
     "corpId": { "label": "企业ID (CorpID)" },
     "corpSecret": { "label": "应用Secret", "sensitive": true },
+    "docs.mcp.type": { "label": "文档 MCP Type" },
+    "docs.mcp.url": { "label": "文档 MCP URL" },
     "asr.appId": { "label": "ASR App ID" },
     "asr.secretId": { "label": "ASR Secret ID", "sensitive": true },
     "asr.secretKey": { "label": "ASR Secret Key", "sensitive": true },

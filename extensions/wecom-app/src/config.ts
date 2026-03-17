@@ -28,6 +28,16 @@ const WecomAppAccountSchema = z.object({
   corpSecret: z.string().optional(),
   agentId: z.number().optional(),
   apiBaseUrl: z.string().optional(),
+  docs: z
+    .object({
+      mcp: z
+        .object({
+          type: z.string().optional(),
+          url: z.string().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 
   // 媒体文件大小限制 (MB)
   maxFileSizeMB: z.number().optional(),
@@ -90,6 +100,20 @@ export const WecomAppConfigJsonSchema = {
       corpSecret: { type: "string" },
       agentId: { type: "number" },
       apiBaseUrl: { type: "string" },
+      docs: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          mcp: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              type: { type: "string" },
+              url: { type: "string" },
+            },
+          },
+        },
+      },
       inboundMedia: {
         type: "object",
         additionalProperties: false,
@@ -141,6 +165,20 @@ export const WecomAppConfigJsonSchema = {
             corpSecret: { type: "string" },
             agentId: { type: "number" },
             apiBaseUrl: { type: "string" },
+            docs: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                mcp: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    type: { type: "string" },
+                    url: { type: "string" },
+                  },
+                },
+              },
+            },
             inboundMedia: {
               type: "object",
               additionalProperties: false,

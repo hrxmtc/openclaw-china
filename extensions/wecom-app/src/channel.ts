@@ -14,6 +14,7 @@ import {
   WecomAppConfigJsonSchema,
   type PluginConfig,
 } from "./config.js";
+import { syncWecomAppDocMcpConfig } from "./mcp-config.js";
 import { registerWecomAppWebhookTarget } from "./monitor.js";
 import { setWecomAppRuntime } from "./runtime.js";
 import { sendWecomAppMessage, stripMarkdown, downloadAndSendImage, downloadAndSendVoice, downloadAndSendFile, downloadAndSendVideo } from "./api.js";
@@ -636,6 +637,18 @@ export const wecomAppPlugin = {
       }
 
       const account = resolveWecomAppAccount({ cfg: ctx.cfg, accountId: ctx.accountId });
+      try {
+        await syncWecomAppDocMcpConfig({
+          cfg: ctx.cfg,
+          account,
+          runtime: {
+            log: ctx.log?.info ?? console.log,
+            error: ctx.log?.error ?? console.error,
+          },
+        });
+      } catch (error) {
+        ctx.log?.error?.(`[wecom-app] failed syncing doc MCP config: ${String(error)}`);
+      }
       if (!account.configured) {
         ctx.log?.info(`[wecom-app] account ${ctx.accountId} not configured; webhook not registered`);
         ctx.setStatus?.({ accountId: ctx.accountId, running: false, configured: false });

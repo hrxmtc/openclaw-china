@@ -6,7 +6,8 @@
   "license": "MIT",
   "files": [
     "dist",
-    "openclaw.plugin.json"
+    "openclaw.plugin.json",
+    "skills"
   ],
   "openclaw": {
     "extensions": [

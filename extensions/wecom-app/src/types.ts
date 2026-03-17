@@ -31,6 +31,16 @@ export type WecomAppAccountConfig = {
   /** 企业微信 API 基础地址（可选，默认 https://qyapi.weixin.qq.com） */
   apiBaseUrl?: string;
 
+  /** 企微文档 MCP 配置（可选） */
+  docs?: {
+    mcp?: {
+      /** MCP 传输类型，默认 streamable-http */
+      type?: string;
+      /** MCP 服务地址 */
+      url?: string;
+    };
+  };
+
   /** 入站媒体（图片/文件）落盘设置 */
   inboundMedia?: {
     /** 是否启用入站媒体落盘（默认 true） */
