@@ -37,6 +37,7 @@ import {
   checkGroupPolicy,
   resolveFileCategory,
   extractMediaFromText,
+  type ExtractedMedia,
   normalizeLocalPath,
   isImagePath,
   appendCronHiddenPrompt,
@@ -174,12 +175,72 @@ function buildGatewayUserContent(inboundCtx: InboundContext, logger: Logger): st
 }
 
 /**
- * 从文本中提取本地媒体路径（图片/文件），但不修改原始文本
+ * 转义正则特殊字符，供按原样匹配媒体来源文本使用
+ */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function finalizeReplyText(text: string): string {
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function stripLocalMediaSyntaxFromText(text: string, mediaItems: ExtractedMedia[]): string {
+  let result = text;
+
+  for (const media of mediaItems) {
+    const source = media.source?.trim();
+    if (!source) continue;
+    const escapedSource = escapeRegExp(source);
+    const fileName = media.fileName ?? path.basename(media.localPath ?? source);
+
+    if (media.type === "image") {
+      const pattern = new RegExp(`\\[!\\[[^\\]]*\\]\\(${escapedSource}\\)\\]\\([^\\)]+\\)`, "g");
+      result = result.replace(pattern, "");
+    }
+
+    if (media.sourceKind === "markdown") {
+      if (media.type === "image") {
+        const pattern = new RegExp(`!\\[[^\\]]*\\]\\(${escapedSource}\\)`, "g");
+        result = result.replace(pattern, "");
+      } else {
+        const pattern = new RegExp(`\\[[^\\]]*\\]\\(${escapedSource}\\)`, "g");
+        result = result.replace(pattern, `[文件: ${fileName}]`);
+      }
+      continue;
+    }
+
+    if (result.includes(source)) {
+      const replacement = media.type === "image" ? "" : `[文件: ${fileName}]`;
+      result = result.split(source).join(replacement);
+    }
+  }
+
+  return finalizeReplyText(result);
+}
+
+function dedupeMediaUrls(values: Array<string | undefined>): string[] {
+  const mediaQueue: string[] = [];
+  const seenMedia = new Set<string>();
+
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (!trimmed) continue;
+    if (seenMedia.has(trimmed)) continue;
+    seenMedia.add(trimmed);
+    mediaQueue.push(trimmed);
+  }
+
+  return mediaQueue;
+}
+
+/**
+ * 从文本中提取本地媒体路径（图片/文件），并清理对应的本地媒体语法
  */
 function extractLocalMediaFromText(params: {
   text: string;
   logger?: Logger;
-}): { mediaUrls: string[] } {
+}): { text: string; mediaUrls: string[] } {
   const { text, logger } = params;
 
   const result = extractMediaFromText(text, {
@@ -199,11 +260,13 @@ function extractLocalMediaFromText(params: {
     parseMarkdownLinks: true,
   });
 
-  const mediaUrls = result.all
-    .filter((m) => m.isLocal && m.localPath)
-    .map((m) => m.localPath as string);
+  const localMedia = result.all.filter((m) => m.isLocal && m.localPath);
+  const mediaUrls = localMedia.map((m) => m.localPath as string);
 
-  return { mediaUrls };
+  return {
+    text: stripLocalMediaSyntaxFromText(text, localMedia),
+    mediaUrls,
+  };
 }
 
 /**
@@ -217,7 +280,7 @@ function extractMediaLinesFromText(params: {
   const { text, logger } = params;
 
   const result = extractMediaFromText(text, {
-    removeFromText: false,
+    removeFromText: true,
     checkExists: true,
     existsSync: (p: string) => {
       const exists = fs.existsSync(p);
@@ -238,6 +301,23 @@ function extractMediaLinesFromText(params: {
     .filter((m): m is string => typeof m === "string" && m.trim().length > 0);
 
   return { text: result.text, mediaUrls };
+}
+
+export function prepareDingtalkReplyContent(params: {
+  text: string;
+  logger?: Logger;
+}): { text: string; mediaUrls: string[] } {
+  const { text, logger } = params;
+  const mediaLineResult = extractMediaLinesFromText({ text, logger });
+  const localMediaResult = extractLocalMediaFromText({
+    text: mediaLineResult.text,
+    logger,
+  });
+
+  return {
+    text: localMediaResult.text,
+    mediaUrls: dedupeMediaUrls([...mediaLineResult.mediaUrls, ...localMediaResult.mediaUrls]),
+  };
 }
 
 function resolveAudioRecognition(raw: DingtalkRawMessage): string | undefined {
@@ -679,55 +759,40 @@ async function handleAICardStreaming(params: {
         );
       }
       const now = Date.now();
-        if (!firstFrameSent || now - lastUpdateTime >= updateInterval) {
-          await streamAICard(card, accumulated, false);
-          lastUpdateTime = now;
-          firstFrameSent = true;
+      if (!firstFrameSent || now - lastUpdateTime >= updateInterval) {
+        const previewText = prepareDingtalkReplyContent({ text: accumulated }).text;
+        await streamAICard(card, previewText, false);
+        lastUpdateTime = now;
+        firstFrameSent = true;
+      }
+    }
+
+    // 完成卡片
+    const preparedReply = prepareDingtalkReplyContent({
+      text: accumulated,
+      logger,
+    });
+    await finishAICard(card, preparedReply.text, (msg) => logger.debug(msg));
+    logger.info(`AI Card streaming completed with ${preparedReply.text.length} chars`);
+
+    // 单独发送媒体消息（图片/文件）
+    if (preparedReply.mediaUrls.length > 0) {
+      logger.debug(`[stream] sending ${preparedReply.mediaUrls.length} media attachments`);
+      for (const mediaUrl of preparedReply.mediaUrls) {
+        try {
+          await sendMediaDingtalk({
+            cfg: dingtalkCfg,
+            to: targetId,
+            mediaUrl,
+            chatType,
+          });
+          logger.debug(`[stream] sent media: ${mediaUrl}`);
+        } catch (fileErr) {
+          logger.warn(`[stream] failed to send media ${mediaUrl}: ${String(fileErr)}`);
         }
       }
-
-      // 完成卡片
-      await finishAICard(card, accumulated, (msg) => logger.debug(msg));
-      logger.info(`AI Card streaming completed with ${accumulated.length} chars`);
-
-      const { mediaUrls: mediaFromLines } = extractMediaLinesFromText({
-        text: accumulated,
-        logger,
-      });
-      const { mediaUrls: localMediaFromText } = extractLocalMediaFromText({
-        text: accumulated,
-        logger,
-      });
-      const mediaQueue: string[] = [];
-      const seenMedia = new Set<string>();
-      const addMedia = (value?: string) => {
-        const trimmed = value?.trim();
-        if (!trimmed) return;
-        if (seenMedia.has(trimmed)) return;
-        seenMedia.add(trimmed);
-        mediaQueue.push(trimmed);
-      };
-      for (const url of mediaFromLines) addMedia(url);
-      for (const url of localMediaFromText) addMedia(url);
-
-      // 单独发送媒体消息（图片/文件）
-      if (mediaQueue.length > 0) {
-        logger.debug(`[stream] sending ${mediaQueue.length} media attachments`);
-        for (const mediaUrl of mediaQueue) {
-          try {
-            await sendMediaDingtalk({
-              cfg: dingtalkCfg,
-              to: targetId,
-              mediaUrl,
-              chatType,
-            });
-            logger.debug(`[stream] sent media: ${mediaUrl}`);
-          } catch (fileErr) {
-            logger.warn(`[stream] failed to send media ${mediaUrl}: ${String(fileErr)}`);
-          }
-        }
-      }
-    } catch (err) {
+    }
+  } catch (err) {
     logger.error(`AI Card streaming failed: ${String(err)}`);
     // 尝试用错误信息完成卡片
     try {
@@ -742,9 +807,13 @@ async function handleAICardStreaming(params: {
         const fallbackText = accumulated.trim()
           ? accumulated
           : formatStreamingInterruptMessage(err);
+        const preparedReply = prepareDingtalkReplyContent({
+          text: fallbackText,
+          logger,
+        });
         const limit = dingtalkCfg.textChunkLimit ?? 4000;
-        for (let i = 0; i < fallbackText.length; i += limit) {
-          const chunk = fallbackText.slice(i, i + limit);
+        for (let i = 0; i < preparedReply.text.length; i += limit) {
+          const chunk = preparedReply.text.slice(i, i + limit);
           await sendMessageDingtalk({
             cfg: dingtalkCfg,
             to: targetId,
@@ -752,26 +821,7 @@ async function handleAICardStreaming(params: {
             chatType,
           });
         }
-        const { mediaUrls: mediaFromLines } = extractMediaLinesFromText({
-          text: fallbackText,
-          logger,
-        });
-        const { mediaUrls: localMediaFromText } = extractLocalMediaFromText({
-          text: fallbackText,
-          logger,
-        });
-        const mediaQueue: string[] = [];
-        const seenMedia = new Set<string>();
-        const addMedia = (value?: string) => {
-          const trimmed = value?.trim();
-          if (!trimmed) return;
-          if (seenMedia.has(trimmed)) return;
-          seenMedia.add(trimmed);
-          mediaQueue.push(trimmed);
-        };
-        for (const url of mediaFromLines) addMedia(url);
-        for (const url of localMediaFromText) addMedia(url);
-        for (const mediaUrl of mediaQueue) {
+        for (const mediaUrl of preparedReply.mediaUrls) {
           await sendMediaDingtalk({
             cfg: dingtalkCfg,
             to: targetId,
@@ -1370,33 +1420,19 @@ export async function handleDingtalkMessage(params: {
 
         const payloadMediaUrls = payload.mediaUrls ?? (payload.mediaUrl ? [payload.mediaUrl] : []);
         const rawText = payload.text ?? "";
-        const { mediaUrls: mediaFromLines } = extractMediaLinesFromText({
+        const preparedReply = prepareDingtalkReplyContent({
           text: rawText,
           logger,
         });
-        const { mediaUrls: localMediaFromText } = extractLocalMediaFromText({
-          text: rawText,
-          logger,
-        });
-
-        const mediaQueue: string[] = [];
-        const seenMedia = new Set<string>();
-        const addMedia = (value?: string) => {
-          const trimmed = value?.trim();
-          if (!trimmed) return;
-          if (seenMedia.has(trimmed)) return;
-          seenMedia.add(trimmed);
-          mediaQueue.push(trimmed);
-        };
-
-        for (const url of payloadMediaUrls) addMedia(url);
-        for (const url of mediaFromLines) addMedia(url);
-        for (const url of localMediaFromText) addMedia(url);
+        const mediaQueue = dedupeMediaUrls([
+          ...payloadMediaUrls,
+          ...preparedReply.mediaUrls,
+        ]);
 
         const converted = (textApi?.convertMarkdownTables as ((text: string, mode: string) => string) | undefined)?.(
-          rawText,
+          preparedReply.text,
           tableMode
-        ) ?? rawText;
+        ) ?? preparedReply.text;
 
         const hasText = converted.trim().length > 0;
         if (hasText) {
