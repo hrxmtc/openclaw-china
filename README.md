@@ -6,9 +6,8 @@
 
 <p align="center">
   <img alt="downloads" src="https://raw.githubusercontent.com/BytePioneer-AI/openclaw-china-badges/main/.github/badges/npm-downloads-18m.svg" />
-  <a href="./package.json">    <img alt="license MIT" src="https://img.shields.io/badge/license-MIT-1f6feb?logo=open-source-initiative&logoColor=white" />
-  </a>
- <a href="https://linux.do" alt="LINUX DO"><img src="https://shorturl.at/ggSqS" /></a>
+  <a href="./package.json"><img alt="license MIT" src="https://img.shields.io/badge/license-MIT-1f6feb?logo=open-source-initiative&logoColor=white" /></a>
+  <a href="https://linux.do"><img alt="LINUX DO" src="https://shorturl.at/ggSqS" /></a>
 </p>
 
 OpenClaw China 为 OpenClaw 提供面向中国常用通讯平台的渠道扩展，帮助你把 AI 助手接入钉钉、企业微信、企业微信自建应用、微信客服、微信公众号、QQ 和飞书等渠道。项目聚焦稳定的消息收发、统一的插件接入面，以及尽量低门槛的配置流程。
