@@ -4,6 +4,7 @@ type WecomRuntimeSnapshot = {
   running?: boolean | null;
   connected?: boolean | null;
   linked?: boolean | null;
+  connectionState?: string | null;
   lastStartAt?: number | null;
   lastStopAt?: number | null;
   lastError?: string | null;
@@ -12,6 +13,16 @@ type WecomRuntimeSnapshot = {
   mode?: string | null;
   webhookPath?: string | null;
 };
+
+function resolveWsLinked(runtime?: WecomRuntimeSnapshot | null): boolean {
+  if (typeof runtime?.linked === "boolean") return runtime.linked;
+  return runtime?.connectionState === "ready";
+}
+
+function resolveWsConnected(runtime?: WecomRuntimeSnapshot | null): boolean {
+  if (typeof runtime?.connected === "boolean") return runtime.connected;
+  return runtime?.connectionState === "ready";
+}
 
 function normalizeStringArray(value: string[] | undefined): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -40,8 +51,8 @@ export function buildWecomAccountSnapshot(params: {
     name: account.name,
     enabled: account.enabled,
     configured: account.configured,
-    linked: runtime?.linked ?? false,
-    connected: runtime?.connected ?? false,
+    linked: resolveWsLinked(runtime),
+    connected: resolveWsConnected(runtime),
     running: runtime?.running ?? false,
     lastStartAt: runtime?.lastStartAt ?? null,
     lastStopAt: runtime?.lastStopAt ?? null,

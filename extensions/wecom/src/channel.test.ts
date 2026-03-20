@@ -24,7 +24,6 @@ describe("wecom status", () => {
     const account = resolveWecomAccount({ cfg, accountId: "main" });
     const snapshot = await wecomPlugin.status?.buildAccountSnapshot?.({
       account,
-      cfg,
       runtime: {
         accountId: "main",
         running: true,
@@ -36,7 +35,6 @@ describe("wecom status", () => {
         mode: "ws",
       },
       probe: undefined,
-      audit: undefined,
     });
 
     expect(snapshot).toMatchObject({
@@ -49,6 +47,28 @@ describe("wecom status", () => {
       lastInboundAt: 202,
       lastOutboundAt: 303,
       lastError: null,
+      mode: "ws",
+    });
+  });
+
+  it("maps ws ready state to connected status for snapshots", async () => {
+    const cfg = createCfg();
+    const account = resolveWecomAccount({ cfg, accountId: "main" });
+    const snapshot = await wecomPlugin.status?.buildAccountSnapshot?.({
+      account,
+      runtime: {
+        accountId: "main",
+        running: true,
+        mode: "ws",
+        connectionState: "ready",
+      },
+    });
+
+    expect(snapshot).toMatchObject({
+      accountId: "main",
+      running: true,
+      connected: true,
+      linked: true,
       mode: "ws",
     });
   });
