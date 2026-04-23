@@ -36,3 +36,4 @@ describe("qqbot plugin skill packaging", () => {
     expect(packageJson.files).toContain("skills");
   });
 });
+

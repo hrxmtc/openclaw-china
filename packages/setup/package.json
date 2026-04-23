@@ -1,0 +1,26 @@
+{
+  "name": "@openclaw-china/setup",
+  "version": "2026.3.9-2",
+  "description": "Cross-platform npm installer for OpenClaw China Channels",
+  "type": "module",
+  "bin": {
+    "openclaw-china-setup": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "smoke": "node ./dist/cli.js --help",
+    "exec:local": "npm exec --package . openclaw-china-setup --"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "private": false
+}

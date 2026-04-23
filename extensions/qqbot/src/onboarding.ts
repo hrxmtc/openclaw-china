@@ -2,10 +2,14 @@ import {
   DEFAULT_ACCOUNT_ID,
   listQQBotAccountIds,
   mergeQQBotAccountConfig,
+  QQBOT_CHANNEL_ID,
+  QQBOT_CONFIG_CHANNEL_ID,
   resolveDefaultQQBotAccountId,
+  resolveQQBotChannelConfig,
   resolveQQBotCredentials,
   type PluginConfig,
   type QQBotConfig,
+  withQQBotChannelConfig,
 } from "./config.js";
 
 export interface WizardPrompter {
@@ -34,43 +38,37 @@ function setQQBotCredentials(params: {
   appId: string;
   clientSecret: string;
 }): PluginConfig {
-  const existing = params.cfg.channels?.qqbot ?? {};
+  const existing = resolveQQBotChannelConfig(params.cfg) ?? {};
 
   if (params.accountId === DEFAULT_ACCOUNT_ID) {
-    return {
-      ...params.cfg,
-      channels: {
-        ...params.cfg.channels,
-        qqbot: {
-          ...existing,
-          enabled: true,
-          appId: params.appId,
-          clientSecret: params.clientSecret,
-        } as QQBotConfig,
-      },
-    };
+    return withQQBotChannelConfig(
+      params.cfg,
+      {
+        ...existing,
+        enabled: true,
+        appId: params.appId,
+        clientSecret: params.clientSecret,
+      } as QQBotConfig
+    );
   }
 
   const accounts = (existing as QQBotConfig).accounts ?? {};
-  return {
-    ...params.cfg,
-    channels: {
-      ...params.cfg.channels,
-      qqbot: {
-        ...existing,
-        enabled: true,
-        accounts: {
-          ...accounts,
-          [params.accountId]: {
-            ...accounts[params.accountId],
-            enabled: true,
-            appId: params.appId,
-            clientSecret: params.clientSecret,
-          },
+  return withQQBotChannelConfig(
+    params.cfg,
+    {
+      ...existing,
+      enabled: true,
+      accounts: {
+        ...accounts,
+        [params.accountId]: {
+          ...accounts[params.accountId],
+          enabled: true,
+          appId: params.appId,
+          clientSecret: params.clientSecret,
         },
-      } as QQBotConfig,
-    },
-  };
+      },
+    } as QQBotConfig
+  );
 }
 
 async function noteQQBotCredentialHelp(prompter: WizardPrompter): Promise<void> {
@@ -81,7 +79,7 @@ async function noteQQBotCredentialHelp(prompter: WizardPrompter): Promise<void> 
       "3) 在开发设置中配置沙箱成员或测试群",
       "4) 配置完成后可使用 openclaw gateway 启动连接",
       "",
-      "命令行也支持：openclaw channels add --channel qqbot --token \"AppID:ClientSecret\"",
+      `命令行也支持：openclaw channels add --channel ${QQBOT_CHANNEL_ID} --token "AppID:ClientSecret"`,
     ].join("\n"),
     "QQ Bot 配置"
   );
@@ -93,7 +91,7 @@ function resolveOnboardingAccountId(params: {
   shouldPromptAccountIds?: boolean;
   accountOverrides?: Record<string, string> | undefined;
 }): Promise<string> | string {
-  const override = params.accountOverrides?.qqbot?.trim();
+  const override = params.accountOverrides?.[QQBOT_CONFIG_CHANNEL_ID]?.trim();
   if (override) return override;
 
   const defaultAccountId = resolveDefaultQQBotAccountId(params.cfg);
@@ -116,7 +114,7 @@ function resolveOnboardingAccountId(params: {
 }
 
 export const qqbotOnboardingAdapter = {
-  channel: "qqbot" as const,
+  channel: QQBOT_CHANNEL_ID,
 
   getStatus: async (params: { cfg: PluginConfig }) => {
     const accountIds = listQQBotAccountIds(params.cfg);
@@ -135,7 +133,7 @@ export const qqbotOnboardingAdapter = {
       : ["QQ Bot: 需要 AppID 和 ClientSecret"];
 
     return {
-      channel: "qqbot" as const,
+      channel: QQBOT_CHANNEL_ID,
       configured,
       statusLines,
       selectionHint: configured ? "已配置" : "需要 AppID 和 ClientSecret",
@@ -206,14 +204,9 @@ export const qqbotOnboardingAdapter = {
     return { cfg: next, accountId };
   },
 
-  disable: (cfg: PluginConfig): PluginConfig => ({
-    ...cfg,
-    channels: {
-      ...cfg.channels,
-      qqbot: {
-        ...(cfg.channels?.qqbot ?? {}),
-        enabled: false,
-      } as QQBotConfig,
-    },
-  }),
+  disable: (cfg: PluginConfig): PluginConfig =>
+    withQQBotChannelConfig(cfg, {
+      ...(resolveQQBotChannelConfig(cfg) ?? {}),
+      enabled: false,
+    } as QQBotConfig),
 };

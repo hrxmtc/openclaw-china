@@ -101,7 +101,7 @@ function installReplyRuntime(
 
 const baseCfg = {
   channels: {
-    qqbot: {
+    "qqbot-china": {
       enabled: true,
       appId: "app-1",
       clientSecret: "secret-1",
@@ -156,8 +156,8 @@ describe("QQBot C2C markdown transport", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             c2cMarkdownDeliveryMode: "proactive-table-only",
           },
         },
@@ -172,8 +172,8 @@ describe("QQBot C2C markdown transport", () => {
       accountId: "default",
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             c2cMarkdownDeliveryMode: "proactive-table-only",
           },
         },
@@ -221,8 +221,8 @@ describe("QQBot C2C markdown transport", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             c2cMarkdownDeliveryMode: "proactive-all",
           },
         },
@@ -236,8 +236,8 @@ describe("QQBot C2C markdown transport", () => {
       accountId: "default",
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             c2cMarkdownDeliveryMode: "proactive-all",
           },
         },
@@ -278,8 +278,8 @@ describe("QQBot C2C markdown transport", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             c2cMarkdownDeliveryMode: "proactive-all",
           },
         },
@@ -293,8 +293,8 @@ describe("QQBot C2C markdown transport", () => {
       accountId: "default",
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             c2cMarkdownDeliveryMode: "proactive-all",
           },
         },
@@ -344,8 +344,8 @@ describe("QQBot C2C markdown transport", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             c2cMarkdownDeliveryMode: "proactive-all",
           },
         },
@@ -406,8 +406,8 @@ describe("QQBot C2C markdown transport", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             c2cMarkdownDeliveryMode: "proactive-all",
           },
         },
@@ -446,8 +446,8 @@ describe("QQBot C2C markdown transport", () => {
         },
         cfg: {
           channels: {
-            qqbot: {
-              ...baseCfg.channels.qqbot,
+            "qqbot-china": {
+              ...baseCfg.channels["qqbot-china"],
               c2cMarkdownDeliveryMode: "proactive-all",
             },
           },
@@ -462,7 +462,7 @@ describe("QQBot C2C markdown transport", () => {
     expect(outboundMocks.sendMedia).toHaveBeenCalledTimes(1);
     expect(outboundMocks.sendMedia).toHaveBeenCalledWith({
       accountId: "default",
-      cfg: { channels: { qqbot: expect.any(Object) } },
+      cfg: { channels: { "qqbot-china": expect.any(Object) } },
       to: "user:u-proactive-1",
       mediaUrl: filePath,
       replyToId: undefined,
@@ -471,7 +471,7 @@ describe("QQBot C2C markdown transport", () => {
     expect(outboundMocks.sendText).toHaveBeenCalledTimes(1);
     expect(outboundMocks.sendText).toHaveBeenCalledWith({
       accountId: "default",
-      cfg: { channels: { qqbot: expect.any(Object) } },
+      cfg: { channels: { "qqbot-china": expect.any(Object) } },
       to: "user:u-proactive-1",
       text: "# 标题\n\n![#640px #480px](https://example.com/remote.png)",
       replyToId: undefined,
@@ -506,8 +506,8 @@ describe("QQBot C2C markdown transport", () => {
         },
         cfg: {
           channels: {
-            qqbot: {
-              ...baseCfg.channels.qqbot,
+            "qqbot-china": {
+              ...baseCfg.channels["qqbot-china"],
               c2cMarkdownDeliveryMode: "passive",
             },
           },
@@ -522,7 +522,7 @@ describe("QQBot C2C markdown transport", () => {
     expect(outboundMocks.sendMedia).toHaveBeenCalledTimes(1);
     expect(outboundMocks.sendMedia).toHaveBeenCalledWith({
       accountId: "default",
-      cfg: { channels: { qqbot: expect.any(Object) } },
+      cfg: { channels: { "qqbot-china": expect.any(Object) } },
       to: "user:u-passive-1",
       mediaUrl: filePath,
       replyToId: "msg-passive-1",
@@ -531,7 +531,7 @@ describe("QQBot C2C markdown transport", () => {
     expect(outboundMocks.sendText).toHaveBeenCalledTimes(1);
     expect(outboundMocks.sendText).toHaveBeenCalledWith({
       accountId: "default",
-      cfg: { channels: { qqbot: expect.any(Object) } },
+      cfg: { channels: { "qqbot-china": expect.any(Object) } },
       to: "user:u-passive-1",
       text: "普通段落",
       replyToId: "msg-passive-1",
@@ -568,8 +568,8 @@ describe("QQBot C2C markdown transport", () => {
         },
         cfg: {
           channels: {
-            qqbot: {
-              ...baseCfg.channels.qqbot,
+            "qqbot-china": {
+              ...baseCfg.channels["qqbot-china"],
               c2cMarkdownDeliveryMode: "proactive-all",
             },
           },
@@ -584,7 +584,7 @@ describe("QQBot C2C markdown transport", () => {
     expect(outboundMocks.sendText).toHaveBeenCalledTimes(1);
     expect(outboundMocks.sendText).toHaveBeenCalledWith({
       accountId: "default",
-      cfg: { channels: { qqbot: expect.any(Object) } },
+      cfg: { channels: { "qqbot-china": expect.any(Object) } },
       to: "group:g-1",
       text: "| col1 | col2 |\n| --- | --- |\n| a | b |",
       replyToId: "msg-group-1",
@@ -593,7 +593,7 @@ describe("QQBot C2C markdown transport", () => {
     expect(outboundMocks.sendMedia).toHaveBeenCalledTimes(1);
     expect(outboundMocks.sendMedia).toHaveBeenCalledWith({
       accountId: "default",
-      cfg: { channels: { qqbot: expect.any(Object) } },
+      cfg: { channels: { "qqbot-china": expect.any(Object) } },
       to: "group:g-1",
       mediaUrl: filePath,
       replyToId: "msg-group-1",
@@ -626,8 +626,8 @@ describe("QQBot C2C markdown transport", () => {
         },
         cfg: {
           channels: {
-            qqbot: {
-              ...baseCfg.channels.qqbot,
+            "qqbot-china": {
+              ...baseCfg.channels["qqbot-china"],
               c2cMarkdownDeliveryMode: "passive",
             },
           },
@@ -645,3 +645,4 @@ describe("QQBot C2C markdown transport", () => {
     expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("sendMedia failed"));
   });
 });
+

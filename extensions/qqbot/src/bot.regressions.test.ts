@@ -91,7 +91,7 @@ function setupRuntime(params?: {
 
 const baseCfg = {
   channels: {
-    qqbot: {
+    "qqbot-china": {
       enabled: true,
       markdownSupport: true,
       c2cMarkdownDeliveryMode: "passive" as const,
@@ -396,3 +396,4 @@ describe("QQBot reported regressions", () => {
     );
   });
 });
+

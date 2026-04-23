@@ -89,3 +89,4 @@ describe("QQBot known target path migration", () => {
     expect(persisted).toContain("\"accountId\": \"snake\"");
   });
 });
+

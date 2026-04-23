@@ -28,7 +28,7 @@ describe("qqbotOnboardingAdapter.getStatus", () => {
     const status = await qqbotOnboardingAdapter.getStatus({
       cfg: {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             appId: "app-1",
             clientSecret: "secret-1",
           },
@@ -46,7 +46,7 @@ describe("qqbotOnboardingAdapter.getStatus", () => {
     const status = await qqbotOnboardingAdapter.getStatus({
       cfg: {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             defaultAccount: "bot-b",
             accounts: {
               "bot-a": {
@@ -75,7 +75,7 @@ describe("qqbotOnboardingAdapter.configure", () => {
 
     const initialCfg = {
       channels: {
-        qqbot: {
+        "qqbot-china": {
           enabled: true,
           appId: "app-1",
           clientSecret: "secret-1",
@@ -107,7 +107,7 @@ describe("qqbotOnboardingAdapter.configure", () => {
     const result = await qqbotOnboardingAdapter.configure({
       cfg: {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             enabled: true,
             markdownSupport: false,
             accounts: {
@@ -137,8 +137,8 @@ describe("qqbotOnboardingAdapter.configure", () => {
     });
     expect(prompter.note).toHaveBeenCalledTimes(1);
     expect(result.accountId).toBe("bot-b");
-    expect(result.cfg.channels?.qqbot?.markdownSupport).toBe(false);
-    expect(result.cfg.channels?.qqbot?.accounts?.["bot-b"]).toMatchObject({
+    expect(result.cfg.channels?.["qqbot-china"]?.markdownSupport).toBe(false);
+    expect(result.cfg.channels?.["qqbot-china"]?.accounts?.["bot-b"]).toMatchObject({
       enabled: true,
       appId: "new-app-id",
       clientSecret: "new-client-secret",
@@ -150,7 +150,7 @@ describe("qqbotOnboardingAdapter.disable", () => {
   it("only flips qqbot.enabled to false", () => {
     const initialCfg = {
       channels: {
-        qqbot: {
+        "qqbot-china": {
           enabled: true,
           appId: "app-1",
           clientSecret: "secret-1",
@@ -168,7 +168,7 @@ describe("qqbotOnboardingAdapter.disable", () => {
 
     const disabled = qqbotOnboardingAdapter.disable(initialCfg);
 
-    expect(disabled.channels?.qqbot).toMatchObject({
+    expect(disabled.channels?.["qqbot-china"]).toMatchObject({
       enabled: false,
       appId: "app-1",
       clientSecret: "secret-1",
@@ -183,3 +183,4 @@ describe("qqbotOnboardingAdapter.disable", () => {
     });
   });
 });
+

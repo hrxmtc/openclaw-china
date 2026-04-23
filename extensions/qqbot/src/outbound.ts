@@ -8,6 +8,8 @@ import {
   mergeQQBotAccountConfig,
   resolveQQBotCredentials,
   DEFAULT_ACCOUNT_ID,
+  QQBOT_CHANNEL_ID,
+  stripQQBotChannelPrefix,
   type PluginConfig,
 } from "./config.js";
 import {
@@ -34,13 +36,8 @@ type QQBotResponseWithExtInfo = {
   };
 };
 
-function stripPrefix(value: string, prefix: string): string {
-  return value.slice(0, prefix.length).toLowerCase() === prefix ? value.slice(prefix.length) : value;
-}
-
 function parseTarget(to: string): { kind: TargetKind; id: string } {
-  let raw = to.trim();
-  raw = stripPrefix(raw, "qqbot:");
+  let raw = stripQQBotChannelPrefix(to);
   const normalizedRaw = raw.toLowerCase();
 
   if (normalizedRaw.startsWith("group:")) {
@@ -303,7 +300,7 @@ export const qqbotOutbound = {
     const qqCfg = mergeQQBotAccountConfig(cfg, accountId ?? DEFAULT_ACCOUNT_ID);
     const credentials = resolveQQBotCredentials(qqCfg);
     if (!credentials) {
-      return { channel: "qqbot", error: "QQBot not configured (missing appId/clientSecret)" };
+      return { channel: QQBOT_CHANNEL_ID, error: "QQBot not configured (missing appId/clientSecret)" };
     }
 
     const target = parseTarget(to);
@@ -329,7 +326,7 @@ export const qqbotOutbound = {
             content: text,
             markdown,
           });
-          return { channel: "qqbot", messageId: result.id, timestamp: result.timestamp };
+          return { channel: QQBOT_CHANNEL_ID, messageId: result.id, timestamp: result.timestamp };
         }
 
         let result: { id: string; timestamp: number | string };
@@ -397,7 +394,7 @@ export const qqbotOutbound = {
             throw retryErr;
           }
         }
-        return { channel: "qqbot", messageId: result.id, timestamp: result.timestamp };
+        return { channel: QQBOT_CHANNEL_ID, messageId: result.id, timestamp: result.timestamp };
       }
       if (target.kind === "channel") {
         logQQBotOutboundDispatch({
@@ -415,7 +412,7 @@ export const qqbotOutbound = {
           content: text,
           messageId: replyToId,
         });
-        return { channel: "qqbot", messageId: result.id, timestamp: result.timestamp };
+        return { channel: QQBOT_CHANNEL_ID, messageId: result.id, timestamp: result.timestamp };
       }
 
       if (!replyToId && !replyEventId) {
@@ -437,7 +434,7 @@ export const qqbotOutbound = {
         const refIdx = resolveResponseRefIdx(result);
         recordOutboundC2CRefIndex({ refIdx, accountId, text });
         return {
-          channel: "qqbot",
+          channel: QQBOT_CHANNEL_ID,
           messageId: result.id,
           timestamp: result.timestamp,
           ...(refIdx ? { refIdx } : {}),
@@ -512,14 +509,14 @@ export const qqbotOutbound = {
       const refIdx = resolveResponseRefIdx(result);
       recordOutboundC2CRefIndex({ refIdx, accountId, text });
       return {
-        channel: "qqbot",
+        channel: QQBOT_CHANNEL_ID,
         messageId: result.id,
         timestamp: result.timestamp,
         ...(refIdx ? { refIdx } : {}),
       };
     } catch (err) {
       const message = summarizeError(err);
-      return { channel: "qqbot", error: message };
+      return { channel: QQBOT_CHANNEL_ID, error: message };
     }
   },
 
@@ -536,14 +533,14 @@ export const qqbotOutbound = {
     if (!mediaUrl) {
       const fallbackText = text?.trim() ?? "";
       if (!fallbackText) {
-        return { channel: "qqbot", error: "mediaUrl is required for sendMedia" };
+        return { channel: QQBOT_CHANNEL_ID, error: "mediaUrl is required for sendMedia" };
       }
       return qqbotOutbound.sendText({ cfg, to, text: fallbackText, replyToId, replyEventId, accountId });
     }
 
     const qqCfg = mergeQQBotAccountConfig(cfg, accountId ?? DEFAULT_ACCOUNT_ID);
     if (!resolveQQBotCredentials(qqCfg)) {
-      return { channel: "qqbot", error: "QQBot not configured (missing appId/clientSecret)" };
+      return { channel: QQBOT_CHANNEL_ID, error: "QQBot not configured (missing appId/clientSecret)" };
     }
 
     const target = parseTarget(to);
@@ -631,7 +628,7 @@ export const qqbotOutbound = {
         });
         if (textResult.error) {
           return {
-            channel: "qqbot",
+            channel: QQBOT_CHANNEL_ID,
             error: `QQBot follow-up text send failed after media delivery: ${textResult.error}`,
           };
         }
@@ -646,14 +643,14 @@ export const qqbotOutbound = {
         });
       }
       return {
-        channel: "qqbot",
+        channel: QQBOT_CHANNEL_ID,
         messageId: result.id,
         timestamp: result.timestamp,
         ...(refIdx ? { refIdx } : {}),
       };
     } catch (err) {
       const message = summarizeError(err);
-      return { channel: "qqbot", error: message };
+      return { channel: QQBOT_CHANNEL_ID, error: message };
     }
   },
 
@@ -669,12 +666,12 @@ export const qqbotOutbound = {
     const qqCfg = mergeQQBotAccountConfig(cfg, accountId ?? DEFAULT_ACCOUNT_ID);
     const credentials = resolveQQBotCredentials(qqCfg);
     if (!credentials) {
-      return { channel: "qqbot", error: "QQBot not configured (missing appId/clientSecret)" };
+      return { channel: QQBOT_CHANNEL_ID, error: "QQBot not configured (missing appId/clientSecret)" };
     }
 
     const target = parseTarget(to);
     if (target.kind !== "c2c") {
-      return { channel: "qqbot" };
+      return { channel: QQBOT_CHANNEL_ID };
     }
 
     try {
@@ -733,12 +730,12 @@ export const qqbotOutbound = {
         }
       }
       return {
-        channel: "qqbot",
+        channel: QQBOT_CHANNEL_ID,
         ...(typingResult?.refIdx ? { refIdx: typingResult.refIdx } : {}),
       };
     } catch (err) {
       const message = summarizeError(err);
-      return { channel: "qqbot", error: message };
+      return { channel: QQBOT_CHANNEL_ID, error: message };
     }
   },
 };

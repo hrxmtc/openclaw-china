@@ -2,6 +2,11 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 
+export const QQBOT_CHANNEL_ID = "qqbot" as const;
+export const QQBOT_CONFIG_CHANNEL_ID = "qqbot-china" as const;
+export const QQBOT_CONFIG_PREFIX = `channels.${QQBOT_CONFIG_CHANNEL_ID}` as const;
+export const QQBOT_CONFIG_PREFIXES = [QQBOT_CONFIG_PREFIX] as const;
+
 function toTrimmedString(value: unknown): string | undefined {
   if (value === undefined || value === null) return undefined;
   const next = String(value).trim();
@@ -179,9 +184,52 @@ export function resolveInboundMediaTempDir(): string {
 // ── PluginConfig interface ────────────────────────────────────────────────────
 
 export interface PluginConfig {
-  channels?: {
-    qqbot?: QQBotConfig;
+  channels?: Record<string, unknown> & {
+    "qqbot-china"?: QQBotConfig;
   };
+}
+
+function asQQBotConfig(value: unknown): QQBotConfig | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as QQBotConfig;
+}
+
+export function resolveQQBotChannelConfig(cfg: PluginConfig | undefined): QQBotConfig | undefined {
+  return asQQBotConfig(cfg?.channels?.[QQBOT_CONFIG_CHANNEL_ID]);
+}
+
+export function withQQBotChannelConfig(
+  cfg: PluginConfig,
+  qqbotConfig?: QQBotConfig
+): PluginConfig {
+  const nextChannels = { ...(cfg.channels ?? {}) } as Record<string, unknown>;
+
+  if (qqbotConfig) {
+    nextChannels[QQBOT_CONFIG_CHANNEL_ID] = qqbotConfig;
+  } else {
+    delete nextChannels[QQBOT_CONFIG_CHANNEL_ID];
+  }
+
+  if (Object.keys(nextChannels).length === 0) {
+    const next = { ...cfg };
+    delete next.channels;
+    return next;
+  }
+
+  return {
+    ...cfg,
+    channels: nextChannels as PluginConfig["channels"],
+  };
+}
+
+export function stripQQBotChannelPrefix(value: string): string {
+  let next = value.trim();
+  if (next.slice(0, QQBOT_CHANNEL_ID.length + 1).toLowerCase() === `${QQBOT_CHANNEL_ID}:`) {
+    next = next.slice(QQBOT_CHANNEL_ID.length + 1).trim();
+  }
+  return next;
 }
 
 // ── Multi-account helpers ─────────────────────────────────────────────────────
@@ -194,7 +242,7 @@ export function normalizeAccountId(raw?: string | null): string {
 }
 
 function listConfiguredAccountIds(cfg: PluginConfig): string[] {
-  const accounts = cfg.channels?.qqbot?.accounts;
+  const accounts = resolveQQBotChannelConfig(cfg)?.accounts;
   if (!accounts || typeof accounts !== "object") return [];
   return Object.keys(accounts).filter(Boolean);
 }
@@ -206,7 +254,7 @@ export function listQQBotAccountIds(cfg: PluginConfig): string[] {
 }
 
 export function resolveDefaultQQBotAccountId(cfg: PluginConfig): string {
-  const qqbotConfig = cfg.channels?.qqbot;
+  const qqbotConfig = resolveQQBotChannelConfig(cfg);
   if (qqbotConfig?.defaultAccount?.trim()) return qqbotConfig.defaultAccount.trim();
   const ids = listQQBotAccountIds(cfg);
   if (ids.includes(DEFAULT_ACCOUNT_ID)) return DEFAULT_ACCOUNT_ID;
@@ -214,13 +262,13 @@ export function resolveDefaultQQBotAccountId(cfg: PluginConfig): string {
 }
 
 function resolveAccountConfig(cfg: PluginConfig, accountId: string): QQBotAccountConfig | undefined {
-  const accounts = cfg.channels?.qqbot?.accounts;
+  const accounts = resolveQQBotChannelConfig(cfg)?.accounts;
   if (!accounts || typeof accounts !== "object") return undefined;
   return accounts[accountId] as QQBotAccountConfig | undefined;
 }
 
 export function mergeQQBotAccountConfig(cfg: PluginConfig, accountId: string): QQBotAccountConfig {
-  const base = (cfg.channels?.qqbot ?? {}) as QQBotConfig;
+  const base = (resolveQQBotChannelConfig(cfg) ?? {}) as QQBotConfig;
   const { accounts: _ignored, defaultAccount: _ignored2, ...baseConfig } = base;
   const account = resolveAccountConfig(cfg, accountId) ?? {};
   const mergedDisplayAliases = {

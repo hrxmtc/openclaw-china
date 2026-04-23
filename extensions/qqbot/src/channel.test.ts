@@ -22,6 +22,11 @@ describe("qqbotPlugin capabilities", () => {
     vi.clearAllMocks();
   });
 
+  it("publishes the qqbot runtime id and watches the qqbot-china config prefix", () => {
+    expect(qqbotPlugin.id).toBe("qqbot");
+    expect(qqbotPlugin.reload.configPrefixes).toEqual(["channels.qqbot-china"]);
+  });
+
   it("declares direct, group, and channel chat types", () => {
     expect(qqbotPlugin.capabilities.chatTypes).toEqual(["direct", "group", "channel"]);
   });
@@ -41,7 +46,7 @@ describe("qqbotPlugin capabilities", () => {
     await qqbotPlugin.gateway.startAccount({
       cfg: {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             appId: "app-1",
             clientSecret: "secret-1",
           },
@@ -60,7 +65,7 @@ describe("qqbotPlugin capabilities", () => {
       expect.objectContaining({
         config: {
           channels: {
-            qqbot: {
+            "qqbot-china": {
               appId: "app-1",
               clientSecret: "secret-1",
             },
@@ -72,3 +77,4 @@ describe("qqbotPlugin capabilities", () => {
     );
   });
 });
+

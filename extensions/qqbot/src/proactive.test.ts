@@ -172,7 +172,7 @@ describe("sendProactiveQQBotMessage", () => {
     const result = await sendProactiveQQBotMessage({
       cfg: {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             appId: "app-1",
             clientSecret: "secret-1",
           },
@@ -191,7 +191,7 @@ describe("sendProactiveQQBotMessage", () => {
     expect(outboundMocks.sendText).toHaveBeenCalledWith({
       cfg: {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             appId: "app-1",
             clientSecret: "secret-1",
           },
@@ -214,7 +214,7 @@ describe("sendProactiveQQBotMessage", () => {
     const result = await sendProactiveQQBotMessage({
       cfg: {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             appId: "app-1",
             clientSecret: "secret-1",
           },
@@ -233,7 +233,7 @@ describe("sendProactiveQQBotMessage", () => {
     expect(outboundMocks.sendMedia).toHaveBeenCalledWith({
       cfg: {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             appId: "app-1",
             clientSecret: "secret-1",
           },
@@ -253,7 +253,7 @@ describe("sendProactiveQQBotMessage", () => {
     });
 
     const result = await sendProactiveQQBotMessage({
-      cfg: { channels: { qqbot: {} } },
+      cfg: { channels: { "qqbot-china": {} } },
       to: "user:u-1",
       text: "hello",
     });
@@ -267,7 +267,7 @@ describe("sendProactiveQQBotMessage", () => {
 
   it("rejects empty proactive targets", async () => {
     const result = await sendProactiveQQBotMessage({
-      cfg: { channels: { qqbot: {} } },
+      cfg: { channels: { "qqbot-china": {} } },
       to: "   ",
       text: "hello",
     });
@@ -282,7 +282,7 @@ describe("sendProactiveQQBotMessage", () => {
 
   it("rejects requests without text or mediaUrl", async () => {
     const result = await sendProactiveQQBotMessage({
-      cfg: { channels: { qqbot: {} } },
+      cfg: { channels: { "qqbot-china": {} } },
       to: "user:u-1",
       text: "   ",
     });
@@ -295,3 +295,4 @@ describe("sendProactiveQQBotMessage", () => {
     expect(outboundMocks.sendMedia).not.toHaveBeenCalled();
   });
 });
+

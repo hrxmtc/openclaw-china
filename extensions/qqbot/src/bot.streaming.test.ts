@@ -67,7 +67,7 @@ function createLogger() {
 function createBaseCfg(overrides?: Record<string, unknown>) {
   return {
     channels: {
-      qqbot: {
+      "qqbot-china": {
         enabled: true,
         appId: "app-1",
         clientSecret: "secret-1",
@@ -398,3 +398,4 @@ describe("QQBot streaming replies", () => {
     expect(clientMocks.sendC2CStreamMessage).toHaveBeenCalledTimes(2);
   });
 });
+

@@ -4,6 +4,7 @@
  */
 
 import { qqbotPlugin, DEFAULT_ACCOUNT_ID } from "./src/channel.js";
+import { QQBOT_CHANNEL_ID, QQBOT_CONFIG_CHANNEL_ID } from "./src/config.js";
 import { setQQBotRuntime, getQQBotRuntime } from "./src/runtime.js";
 import { registerChinaSetupCli, showChinaInstallHint } from "@openclaw-china/shared";
 
@@ -14,6 +15,7 @@ export interface MoltbotPluginApi {
 }
 
 export { qqbotPlugin, DEFAULT_ACCOUNT_ID } from "./src/channel.js";
+export { QQBOT_CHANNEL_ID, QQBOT_CONFIG_CHANNEL_ID } from "./src/config.js";
 export { setQQBotRuntime, getQQBotRuntime } from "./src/runtime.js";
 export {
   listKnownQQBotTargets,
@@ -26,7 +28,7 @@ export type { QQBotConfig, QQBotAccountConfig, ResolvedQQBotAccount, QQBotSendRe
 export type { KnownQQBotTarget } from "./src/proactive.js";
 
 const plugin = {
-  id: "qqbot",
+  id: QQBOT_CHANNEL_ID,
   name: "QQ Bot",
   description: "QQ 开放平台机器人消息渠道插件",
   configSchema: {
@@ -145,7 +147,7 @@ const plugin = {
   },
 
   register(api: MoltbotPluginApi) {
-    registerChinaSetupCli(api, { channels: ["qqbot"] });
+    registerChinaSetupCli(api, { channels: [QQBOT_CONFIG_CHANNEL_ID] });
     showChinaInstallHint(api);
 
     if (api.runtime) {

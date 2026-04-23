@@ -3,6 +3,7 @@ import type {
   QQBotC2CMarkdownDeliveryMode,
   QQBotTypingHeartbeatMode,
 } from "./config.js";
+import { QQBOT_CHANNEL_ID } from "./config.js";
 
 export type {
   QQBotConfig,
@@ -26,7 +27,7 @@ export interface ResolvedQQBotAccount {
 }
 
 export interface QQBotSendResult {
-  channel: "qqbot";
+  channel: typeof QQBOT_CHANNEL_ID;
   messageId?: string;
   timestamp?: number | string;
   refIdx?: string;
@@ -78,11 +79,11 @@ export interface InboundContext {
   GroupSubject?: string;
   SenderName?: string;
   SenderId: string;
-  Provider: "qqbot";
+  Provider: typeof QQBOT_CHANNEL_ID;
   MessageSid: string;
   Timestamp: number;
   WasMentioned: boolean;
   CommandAuthorized: boolean;
-  OriginatingChannel: "qqbot";
+  OriginatingChannel: typeof QQBOT_CHANNEL_ID;
   OriginatingTo: string;
 }

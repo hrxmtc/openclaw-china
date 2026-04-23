@@ -143,7 +143,7 @@ describe("QQBotConfigSchema", () => {
     const merged = mergeQQBotAccountConfig(
       {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             displayAliases: {
               "user:u-top": "Top Alias",
               "user:u-shared": "Shared Top",
@@ -173,7 +173,7 @@ describe("QQBotConfigSchema", () => {
     const merged = mergeQQBotAccountConfig(
       {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             c2cMarkdownChunkStrategy: "length",
             accounts: {
               main: {
@@ -193,7 +193,7 @@ describe("QQBotConfigSchema", () => {
     const merged = mergeQQBotAccountConfig(
       {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             c2cMarkdownSafeChunkByteLimit: DEFAULT_QQBOT_C2C_MARKDOWN_SAFE_CHUNK_BYTE_LIMIT,
             accounts: {
               main: {
@@ -213,7 +213,7 @@ describe("QQBotConfigSchema", () => {
     const merged = mergeQQBotAccountConfig(
       {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             typingHeartbeatMode: "idle",
             typingHeartbeatIntervalMs: 5000,
             typingInputSeconds: 60,
@@ -239,7 +239,7 @@ describe("QQBotConfigSchema", () => {
     const merged = mergeQQBotAccountConfig(
       {
         channels: {
-          qqbot: {
+          "qqbot-china": {
             streaming: false,
             accounts: {
               main: {
@@ -281,3 +281,4 @@ describe("QQBotConfigSchema", () => {
     });
   });
 });
+

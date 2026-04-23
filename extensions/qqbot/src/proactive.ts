@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { DEFAULT_ACCOUNT_ID, type PluginConfig } from "./config.js";
+import { DEFAULT_ACCOUNT_ID, QQBOT_CHANNEL_ID, type PluginConfig } from "./config.js";
 import { qqbotOutbound } from "./outbound.js";
 import type { QQBotSendResult, QQChatType } from "./types.js";
 
@@ -258,7 +258,7 @@ export async function sendProactiveQQBotMessage(params: {
 }): Promise<QQBotSendResult> {
   const to = params.to.trim();
   if (!to) {
-    return { channel: "qqbot", error: "to is required for proactive send" };
+    return { channel: QQBOT_CHANNEL_ID, error: "to is required for proactive send" };
   }
 
   if (params.mediaUrl?.trim()) {
@@ -273,7 +273,7 @@ export async function sendProactiveQQBotMessage(params: {
 
   const text = params.text?.trim();
   if (!text) {
-    return { channel: "qqbot", error: "text or mediaUrl is required for proactive send" };
+    return { channel: QQBOT_CHANNEL_ID, error: "text or mediaUrl is required for proactive send" };
   }
 
   return qqbotOutbound.sendText({

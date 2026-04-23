@@ -106,7 +106,7 @@ async function flushMicrotasks(): Promise<void> {
 
 const baseConfig = {
   channels: {
-    qqbot: {
+    "qqbot-china": {
       appId: "app-1",
       clientSecret: "secret-1",
     },
@@ -214,7 +214,7 @@ describe("QQBot monitor", () => {
   it("does not leave account entries behind when config validation fails", async () => {
     await expect(
       monitorQQBotProvider({
-        config: { channels: { qqbot: {} } },
+        config: { channels: { "qqbot-china": {} } },
         accountId: "broken",
       })
     ).rejects.toThrow("missing appId or clientSecret");
@@ -224,3 +224,4 @@ describe("QQBot monitor", () => {
     expect(mocks.MockWebSocket.instances).toHaveLength(0);
   });
 });
+

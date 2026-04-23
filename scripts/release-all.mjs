@@ -16,6 +16,7 @@ const wecomKfPath = path.join(root, "extensions", "wecom-kf", "package.json");
 const qqbotPath = path.join(root, "extensions", "qqbot", "package.json");
 const wechatMpPath = path.join(root, "extensions", "wechat-mp", "package.json");
 const channelsPath = path.join(root, "packages", "channels", "package.json");
+const setupPath = path.join(root, "packages", "setup", "package.json");
 const channelIds = ["dingtalk", "feishu-china", "wecom", "wecom-app", "wecom-kf", "wechat-mp", "qqbot"];
 
 function printUsage() {
@@ -256,6 +257,7 @@ const wecomKfPkg = readJson(wecomKfPath);
 const qqbotPkg = readJson(qqbotPath);
 const wechatMpPkg = readJson(wechatMpPath);
 const channelsPkg = readJson(channelsPath);
+const setupPkg = readJson(setupPath);
 
 const originalShared = readJson(sharedPath);
 const originalDingtalk = readJson(dingtalkPath);
@@ -266,6 +268,7 @@ const originalWecomKf = readJson(wecomKfPath);
 const originalQqbot = readJson(qqbotPath);
 const originalWechatMp = readJson(wechatMpPath);
 const originalChannels = readJson(channelsPath);
+const originalSetup = readJson(setupPath);
 
 try {
   const options = parseArgs(process.argv.slice(2));
@@ -312,6 +315,7 @@ try {
       channelsPkg.version,
       options.version
     );
+    const nextSetup = getReleaseVersion(setupPkg.name, setupPkg.version, options.version);
 
     sharedPkg.version = nextShared;
     sharedPkg.private = false;
@@ -362,6 +366,9 @@ try {
     channelsPkg.dependencies["@openclaw-china/qqbot"] = nextQqbot;
     channelsPkg.dependencies["@openclaw-china/shared"] = nextShared;
 
+    setupPkg.version = nextSetup;
+    setupPkg.private = false;
+
     writeJson(sharedPath, sharedPkg);
     writeJson(dingtalkPath, dingtalkPkg);
     writeJson(feishuPath, feishuPkg);
@@ -371,6 +378,7 @@ try {
     writeJson(qqbotPath, qqbotPkg);
     writeJson(wechatMpPath, wechatMpPkg);
     writeJson(channelsPath, channelsPkg);
+    writeJson(setupPath, setupPkg);
 
     run("pnpm -F @openclaw-china/shared build");
     run("pnpm -F @openclaw-china/dingtalk build");
@@ -381,6 +389,7 @@ try {
     run("pnpm -F @openclaw-china/wechat-mp build");
     run("pnpm -F @openclaw-china/qqbot build");
     run("pnpm -F @openclaw-china/channels build");
+    run("pnpm -F @openclaw-china/setup build");
 
     publishPackage(path.join(root, "packages", "shared"), options.tag);
     publishPackage(path.join(root, "extensions", "dingtalk"), options.tag);
@@ -391,6 +400,7 @@ try {
     publishPackage(path.join(root, "extensions", "wechat-mp"), options.tag);
     publishPackage(path.join(root, "extensions", "qqbot"), options.tag);
     publishPackage(path.join(root, "packages", "channels"), options.tag);
+    publishPackage(path.join(root, "packages", "setup"), options.tag);
   } else {
     if (!channelMap[options.channel]) {
       throw new Error(
@@ -518,4 +528,5 @@ try {
   writeJson(qqbotPath, originalQqbot);
   writeJson(wechatMpPath, originalWechatMp);
   writeJson(channelsPath, originalChannels);
+  writeJson(setupPath, originalSetup);
 }

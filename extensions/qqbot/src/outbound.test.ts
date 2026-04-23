@@ -35,7 +35,7 @@ import { qqbotOutbound } from "./outbound.js";
 
 const baseCfg = {
   channels: {
-    qqbot: {
+    "qqbot-china": {
       appId: "app-1",
       clientSecret: "secret-1",
       markdownSupport: true,
@@ -333,3 +333,4 @@ describe("qqbotOutbound event_id fallback", () => {
     expect(mocks.setRefIndex).not.toHaveBeenCalled();
   });
 });
+

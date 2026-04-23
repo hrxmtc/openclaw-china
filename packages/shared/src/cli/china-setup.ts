@@ -51,7 +51,14 @@ type ConfigRoot = {
   [key: string]: unknown;
 };
 
-export type ChannelId = "dingtalk" | "feishu-china" | "wecom" | "wecom-app" | "wecom-kf" | "qqbot" | "wechat-mp";
+export type ChannelId =
+  | "dingtalk"
+  | "feishu-china"
+  | "wecom"
+  | "wecom-app"
+  | "wecom-kf"
+  | "qqbot-china"
+  | "wechat-mp";
 
 export type RegisterChinaSetupCliOptions = {
   channels?: readonly ChannelId[];
@@ -72,9 +79,10 @@ const CONFIG_FILE_PATH = join(OPENCLAW_HOME, "openclaw.json");
 const ANSI_RESET = "\u001b[0m";
 const ANSI_LINK = "\u001b[1;4;96m";
 const ANSI_BORDER = "\u001b[92m";
+const QQBOT_CHANNEL_ID = "qqbot-china" as const;
 const CHANNEL_ORDER: readonly ChannelId[] = [
   "dingtalk",
-  "qqbot",
+  QQBOT_CHANNEL_ID,
   "wecom",
   "wecom-app",
   "wecom-kf",
@@ -88,7 +96,7 @@ const CHANNEL_DISPLAY_LABELS: Record<ChannelId, string> = {
   "wecom-app": "WeCom App（自建应用-可接入微信）",
   "wecom-kf": "WeCom KF（微信客服）",
   "wechat-mp": "WeChat MP（微信公众号）",
-  qqbot: "QQBot（QQ 机器人）",
+  "qqbot-china": "QQBot（QQ 机器人）",
 };
 const CHANNEL_GUIDE_LINKS: Record<ChannelId, string> = {
   dingtalk: `${GUIDES_BASE}/dingtalk/configuration.md`,
@@ -97,7 +105,7 @@ const CHANNEL_GUIDE_LINKS: Record<ChannelId, string> = {
   "wecom-app": `${GUIDES_BASE}/wecom-app/configuration.md`,
   "wecom-kf": "https://github.com/BytePioneer-AI/openclaw-china/blob/main/extensions/wecom-kf/README.md",
   "wechat-mp": `${GUIDES_BASE}/wechat-mp/configuration.md`,
-  qqbot: `${GUIDES_BASE}/qqbot/configuration.md`,
+  "qqbot-china": `${GUIDES_BASE}/qqbot/configuration.md`,
 };
 const CHINA_CLI_STATE_KEY = Symbol.for("@openclaw-china/china-cli-state");
 
@@ -335,7 +343,7 @@ function isChannelConfigured(cfg: ConfigRoot, channelId: ChannelId): boolean {
       return hasNonEmptyString(channelCfg.clientId) && hasNonEmptyString(channelCfg.clientSecret);
     case "feishu-china":
       return hasNonEmptyString(channelCfg.appId) && hasNonEmptyString(channelCfg.appSecret);
-    case "qqbot":
+    case "qqbot-china":
       return hasNonEmptyString(channelCfg.appId) && hasNonEmptyString(channelCfg.clientSecret);
     case "wecom":
       return hasWecomWsCredentialPair(channelCfg);
@@ -366,11 +374,12 @@ function mergeChannelConfig(
 ): ConfigRoot {
   const channels = isRecord(cfg.channels) ? { ...cfg.channels } : {};
   const existing = getChannelConfig(cfg, channelId);
-  channels[channelId] = {
+  const nextChannelConfig = {
     ...existing,
     ...patch,
     enabled: true,
   };
+  channels[channelId] = nextChannelConfig;
   return {
     ...cfg,
     channels,
@@ -797,8 +806,8 @@ async function configureWechatMp(prompter: SetupPrompter, cfg: ConfigRoot): Prom
 
 async function configureQQBot(prompter: SetupPrompter, cfg: ConfigRoot): Promise<ConfigRoot> {
   section("配置 QQBot（QQ 机器人）");
-  showGuideLink("qqbot");
-  const existing = getChannelConfig(cfg, "qqbot");
+  showGuideLink(QQBOT_CHANNEL_ID);
+  const existing = getChannelConfig(cfg, QQBOT_CHANNEL_ID);
   const existingAsr = isRecord(existing.asr) ? existing.asr : {};
 
   const appId = await prompter.askText({
@@ -838,7 +847,7 @@ async function configureQQBot(prompter: SetupPrompter, cfg: ConfigRoot): Promise
     });
   }
 
-  return mergeChannelConfig(cfg, "qqbot", {
+  return mergeChannelConfig(cfg, QQBOT_CHANNEL_ID, {
     appId,
     clientSecret,
     asr,
@@ -863,7 +872,7 @@ async function configureSingleChannel(
       return configureWecomKf(prompter, cfg);
     case "wechat-mp":
       return configureWechatMp(prompter, cfg);
-    case "qqbot":
+    case "qqbot-china":
       return configureQQBot(prompter, cfg);
     default:
       return cfg;

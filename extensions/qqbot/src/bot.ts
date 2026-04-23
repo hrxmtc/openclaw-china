@@ -37,6 +37,10 @@ import {
   resolveQQBotTypingInputSeconds,
   mergeQQBotAccountConfig,
   DEFAULT_ACCOUNT_ID,
+  QQBOT_CHANNEL_ID,
+  QQBOT_CONFIG_CHANNEL_ID,
+  resolveQQBotChannelConfig,
+  stripQQBotChannelPrefix,
   type QQBotC2CMarkdownChunkStrategy,
   type QQBotC2CMarkdownDeliveryMode,
   type QQBotAccountConfig,
@@ -152,6 +156,18 @@ const QQBOT_ABORT_TRIGGERS = new Set([
   "stop please",
 ]);
 const QQBOT_ABORT_TRAILING_PUNCTUATION_RE = /[.!?…,，。;；:：'"’”)\]}]+$/u;
+const QQBOT_ROUTE_PREFIX_RE = new RegExp(
+  `^(agent:[^:]+:${QQBOT_CHANNEL_ID}:)(?:direct|dm):.+$`,
+  "i"
+);
+
+function buildQQBotScopedConfig(qqCfg: QQBotAccountConfig): PluginConfig {
+  return {
+    channels: {
+      [QQBOT_CONFIG_CHANNEL_ID]: qqCfg,
+    },
+  };
+}
 
 function resolveQQBotRouteSessionKey(route: QQBotAgentRoute): string {
   const effectiveSessionKey = route.effectiveSessionKey?.trim();
@@ -296,10 +312,10 @@ function buildQQBotDirectSessionKey(params: {
   const normalizedSenderId = normalizeQQBotSessionKeyPart(params.senderStableId);
   const trimmedRouteSessionKey = params.routeSessionKey.trim();
   if (!trimmedRouteSessionKey) {
-    return `agent:main:qqbot:dm:${normalizedAccountId}:${normalizedSenderId}`;
+    return `agent:main:${QQBOT_CHANNEL_ID}:dm:${normalizedAccountId}:${normalizedSenderId}`;
   }
 
-  const qqAgentRouteMatch = trimmedRouteSessionKey.match(/^(agent:[^:]+:qqbot:)(?:direct|dm):.+$/i);
+  const qqAgentRouteMatch = trimmedRouteSessionKey.match(QQBOT_ROUTE_PREFIX_RE);
   if (qqAgentRouteMatch?.[1]) {
     return `${qqAgentRouteMatch[1]}dm:${normalizedAccountId}:${normalizedSenderId}`;
   }
@@ -317,9 +333,7 @@ function normalizeQQBotReplyTarget(value: unknown): string | undefined {
     return undefined;
   }
 
-  if (/^qqbot:/i.test(trimmed)) {
-    trimmed = trimmed.slice("qqbot:".length).trim();
-  }
+  trimmed = stripQQBotChannelPrefix(trimmed);
 
   if (/^c2c:/i.test(trimmed)) {
     const openid = trimmed.slice("c2c:".length).trim();
@@ -465,7 +479,7 @@ function resolveQQBotDisplayAliasMaps(
   globalAliases: Record<string, string>;
   accountAliases: Record<string, string>;
 } {
-  const qqbot = cfg?.channels?.qqbot;
+  const qqbot = resolveQQBotChannelConfig(cfg);
   return {
     globalAliases: normalizeQQBotDisplayAliasesMap(qqbot?.displayAliases),
     accountAliases: normalizeQQBotDisplayAliasesMap(qqbot?.accounts?.[accountId]?.displayAliases),
@@ -1536,11 +1550,7 @@ export function evaluateReplyFinalOnlyDelivery(params: {
 }
 
 function isQQBotC2CTarget(to: string): boolean {
-  const trimmed = to.trim();
-  const raw =
-    trimmed.slice(0, "qqbot:".length).toLowerCase() === "qqbot:"
-      ? trimmed.slice("qqbot:".length)
-      : trimmed;
+  const raw = stripQQBotChannelPrefix(to);
   const normalizedRaw = raw.toLowerCase();
   return !normalizedRaw.startsWith("group:") && !normalizedRaw.startsWith("channel:");
 }
@@ -2879,7 +2889,7 @@ export async function sendQQBotMediaWithFallback(params: {
       return;
     }
     const result = await outbound.sendMedia({
-      cfg: { channels: { qqbot: qqCfg } },
+      cfg: buildQQBotScopedConfig(qqCfg),
       to,
       mediaUrl,
       replyToId,
@@ -2897,7 +2907,7 @@ export async function sendQQBotMediaWithFallback(params: {
         return;
       }
       const fallbackResult = await outbound.sendText({
-        cfg: { channels: { qqbot: qqCfg } },
+        cfg: buildQQBotScopedConfig(qqCfg),
         to,
         text: fallback,
         replyToId,
@@ -2932,10 +2942,10 @@ function buildInboundContext(params: {
   const { to } = resolveChatTarget(event);
   const from =
     event.type === "group"
-      ? `qqbot:group:${event.groupOpenid ?? ""}`
+      ? `${QQBOT_CHANNEL_ID}:group:${event.groupOpenid ?? ""}`
       : event.type === "channel"
-        ? `qqbot:channel:${event.channelId ?? ""}`
-        : `qqbot:${event.senderId}`;
+        ? `${QQBOT_CHANNEL_ID}:channel:${event.channelId ?? ""}`
+        : `${QQBOT_CHANNEL_ID}:${event.senderId}`;
 
   return {
     Body: body,
@@ -2949,12 +2959,12 @@ function buildInboundContext(params: {
     GroupSubject: event.type === "group" ? event.groupOpenid : event.channelId,
     SenderName: event.senderName,
     SenderId: event.senderId,
-    Provider: "qqbot",
+    Provider: QQBOT_CHANNEL_ID,
     MessageSid: event.messageId,
     Timestamp: event.timestamp,
     WasMentioned: event.mentionedBot,
     CommandAuthorized: true,
-    OriginatingChannel: "qqbot",
+    OriginatingChannel: QQBOT_CHANNEL_ID,
     OriginatingTo: to,
   };
 }
@@ -2986,7 +2996,7 @@ async function dispatchToAgent(params: {
   let typingRefIdx: string | undefined;
   if (inbound.c2cOpenid && !isFastAbortCommand && !shouldSuppressVisibleReplies()) {
     const typing = await qqbotOutbound.sendTyping({
-      cfg: { channels: { qqbot: qqCfg } },
+      cfg: buildQQBotScopedConfig(qqCfg),
       to: `user:${inbound.c2cOpenid}`,
       replyToId: inbound.messageId,
       replyEventId: inbound.eventId,
@@ -3045,7 +3055,7 @@ async function dispatchToAgent(params: {
       renew: async () => {
         try {
           const typing = await qqbotOutbound.sendTyping({
-            cfg: { channels: { qqbot: qqCfg } },
+            cfg: buildQQBotScopedConfig(qqCfg),
             to: `user:${inbound.c2cOpenid}`,
             replyToId: inbound.messageId,
             replyEventId: inbound.eventId,
@@ -3067,7 +3077,7 @@ async function dispatchToAgent(params: {
       if (groupMessageInterfaceBlocked || isFastAbortCommand || shouldSuppressVisibleReplies()) return;
       markVisibleOutboundStarted();
       const result = await qqbotOutbound.sendText({
-        cfg: { channels: { qqbot: qqCfg } },
+        cfg: buildQQBotScopedConfig(qqCfg),
         to: target.to,
         text: LONG_TASK_NOTICE_TEXT,
         replyToId: inbound.messageId,
@@ -3113,7 +3123,7 @@ async function dispatchToAgent(params: {
       }
       markVisibleOutboundStarted();
       const fallback = await qqbotOutbound.sendText({
-        cfg: { channels: { qqbot: qqCfg } },
+        cfg: buildQQBotScopedConfig(qqCfg),
         to: target.to,
         text: buildVoiceASRFallbackReply(resolvedAttachmentResult.asrErrorMessage),
         replyToId: inbound.messageId,
@@ -3252,7 +3262,7 @@ async function dispatchToAgent(params: {
         !isGroup
           ? {
               sessionKey: mainSessionKey ?? route.sessionKey,
-              channel: "qqbot",
+              channel: QQBOT_CHANNEL_ID,
               to: stableTo,
               accountId: outboundAccountId,
             }
@@ -3297,14 +3307,14 @@ async function dispatchToAgent(params: {
     const limit =
       textApi?.resolveTextChunkLimit?.({
         cfg,
-        channel: "qqbot",
+        channel: QQBOT_CHANNEL_ID,
         defaultLimit: qqCfg.textChunkLimit ?? 1500,
       }) ?? (qqCfg.textChunkLimit ?? 1500);
 
-    const chunkMode = textApi?.resolveChunkMode?.(cfg, "qqbot");
+    const chunkMode = textApi?.resolveChunkMode?.(cfg, QQBOT_CHANNEL_ID);
     const tableMode = textApi?.resolveMarkdownTableMode?.({
       cfg,
-      channel: "qqbot",
+      channel: QQBOT_CHANNEL_ID,
       accountId: outboundAccountId,
     });
     const resolvedTableMode = tableMode ?? "bullets";
@@ -3472,7 +3482,7 @@ async function dispatchToAgent(params: {
         );
         markVisibleOutboundStarted();
         const result = await qqbotOutbound.sendText({
-          cfg: { channels: { qqbot: qqCfg } },
+          cfg: buildQQBotScopedConfig(qqCfg),
           to: target.to,
           text: chunk,
           replyToId: textReplyRefs.replyToId,
@@ -3630,7 +3640,7 @@ async function dispatchToAgent(params: {
           }
           markVisibleOutboundStarted();
           const result = await qqbotOutbound.sendText({
-            cfg: { channels: { qqbot: qqCfg } },
+            cfg: buildQQBotScopedConfig(qqCfg),
             to: target.to,
             text: chunk,
             replyToId: textReplyRefs.replyToId,
@@ -3788,7 +3798,7 @@ async function dispatchToAgent(params: {
       logger.info("no visible reply generated for group mention; sending fallback text");
       markVisibleOutboundStarted();
       const fallbackResult = await qqbotOutbound.sendText({
-        cfg: { channels: { qqbot: qqCfg } },
+        cfg: buildQQBotScopedConfig(qqCfg),
         to: target.to,
         text: noReplyFallback,
         replyToId: inbound.messageId,
@@ -3931,7 +3941,7 @@ export async function handleQQBotDispatch(params: DispatchParams): Promise<void>
   const target = resolveChatTarget(resolvedInbound);
   const route = routing({
     cfg: params.cfg,
-    channel: "qqbot",
+    channel: QQBOT_CHANNEL_ID,
     accountId,
     peer: { kind: target.peerKind, id: target.peerId },
   }) as QQBotAgentRoute;

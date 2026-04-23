@@ -14,8 +14,10 @@
     "build:shared": "pnpm -F @openclaw-china/shared build",
     "build:dingtalk": "pnpm -F @openclaw-china/dingtalk build",
     "build:channels": "pnpm -F @openclaw-china/channels build",
+    "build:setup": "pnpm -F @openclaw-china/setup build",
     "release:all": "node scripts/release-all.mjs",
     "release:channel": "node scripts/release-all.mjs",
+    "release:setup": "node scripts/release-setup.mjs",
     "clean": "pnpm -r clean",
     "lint": "oxlint .",
     "typecheck": "tsc --noEmit"

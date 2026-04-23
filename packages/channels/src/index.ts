@@ -70,6 +70,8 @@ import {
 import wechatMpEntry from "@openclaw-china/wechat-mp";
 import { registerChinaSetupCli, showChinaInstallHint } from "@openclaw-china/shared";
 
+const QQBOT_CONFIG_CHANNEL_ID = "qqbot-china" as const;
+
 export {
   dingtalkPlugin,
   DINGTALK_DEFAULT_ACCOUNT_ID,
@@ -214,7 +216,7 @@ export interface MoltbotConfig {
     "wecom-app"?: WecomAppRouteConfig;
     "wecom-kf"?: WecomKfRouteConfig;
     "wechat-mp"?: WechatMpRouteConfig;
-    qqbot?: ChannelConfig;
+    "qqbot-china"?: ChannelConfig;
     qq?: ChannelConfig;
     [key: string]: ChannelConfig | undefined;
   };
@@ -247,7 +249,15 @@ export interface MoltbotPluginApi {
 /**
  * 支持的渠道列表
  */
-export const SUPPORTED_CHANNELS = ["dingtalk", "feishu-china", "wecom", "wecom-app", "wecom-kf", "wechat-mp", "qqbot"] as const;
+export const SUPPORTED_CHANNELS = [
+  "dingtalk",
+  "feishu-china",
+  "wecom",
+  "wecom-app",
+  "wecom-kf",
+  "wechat-mp",
+  QQBOT_CONFIG_CHANNEL_ID,
+] as const;
 // TODO: 鍚庣画娣诲姞 "qq"
 
 export type SupportedChannel = (typeof SUPPORTED_CHANNELS)[number];
@@ -283,7 +293,7 @@ const channelPlugins: Record<SupportedChannel, { register: (api: MoltbotPluginAp
       wechatMpEntry.register(api);
     },
   },
-  qqbot: {
+  [QQBOT_CONFIG_CHANNEL_ID]: {
     register: (api: MoltbotPluginApi) => {
       qqbotEntry.register(api);
     },

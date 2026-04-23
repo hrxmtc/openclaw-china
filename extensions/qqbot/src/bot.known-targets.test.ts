@@ -88,7 +88,7 @@ function setupSessionRuntime(params?: {
 
 const baseCfg = {
   channels: {
-    qqbot: {
+    "qqbot-china": {
       enabled: true,
       appId: "app-1",
       clientSecret: "secret-1",
@@ -196,8 +196,8 @@ describe("QQBot inbound known-target recording", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             displayAliases: {
               "user:u-alias-1": "Global Alias",
             },
@@ -255,8 +255,8 @@ describe("QQBot inbound known-target recording", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             displayAliases: {
               "user:u-priority-1": "Global Alias",
             },
@@ -417,8 +417,8 @@ describe("QQBot inbound known-target recording", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             dmPolicy: "allowlist",
             allowFrom: ["u-allowed"],
           },
@@ -761,8 +761,8 @@ describe("QQBot direct session isolation", () => {
     const logger = createLogger();
     const multiAccountCfg = {
       channels: {
-        qqbot: {
-          ...baseCfg.channels.qqbot,
+        "qqbot-china": {
+          ...baseCfg.channels["qqbot-china"],
           accounts: {
             bot2: {
               enabled: true,
@@ -850,8 +850,8 @@ describe("QQBot direct session isolation", () => {
     const logger = createLogger();
     const multiAccountCfg = {
       channels: {
-        qqbot: {
-          ...baseCfg.channels.qqbot,
+        "qqbot-china": {
+          ...baseCfg.channels["qqbot-china"],
           typingHeartbeatMode: "always",
           typingHeartbeatIntervalMs: 3000,
           accounts: {
@@ -961,8 +961,8 @@ describe("QQBot direct session isolation", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             typingHeartbeatMode: "none",
           },
         },
@@ -1019,8 +1019,8 @@ describe("QQBot direct session isolation", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             longTaskNoticeDelayMs: 12000,
           },
         },
@@ -1070,8 +1070,8 @@ describe("QQBot direct session isolation", () => {
     });
     const multiAccountCfg = {
       channels: {
-        qqbot: {
-          ...baseCfg.channels.qqbot,
+        "qqbot-china": {
+          ...baseCfg.channels["qqbot-china"],
           accounts: {
             bot2: {
               enabled: true,
@@ -1354,3 +1354,4 @@ describe("QQBot direct session isolation", () => {
     expect(dispatchCtx.OriginatingTo).toBe("group:g-finalized");
   });
 });
+

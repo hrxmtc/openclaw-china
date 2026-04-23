@@ -81,7 +81,7 @@ function installRuntime(params?: {
 
 const baseCfg = {
   channels: {
-    qqbot: {
+    "qqbot-china": {
       enabled: true,
       appId: "app-1",
       clientSecret: "secret-1",
@@ -201,8 +201,8 @@ describe("QQBot ref-index quote context", () => {
       },
       cfg: {
         channels: {
-          qqbot: {
-            ...baseCfg.channels.qqbot,
+          "qqbot-china": {
+            ...baseCfg.channels["qqbot-china"],
             displayAliases: {
               "user:u-ref-alias-1": "Resolved Alias",
             },
@@ -335,3 +335,4 @@ describe("QQBot ref-index quote context", () => {
     expect(ctx.BodyForAgent).toBeUndefined();
   });
 });
+

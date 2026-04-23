@@ -73,7 +73,7 @@ function setupRuntime(params?: {
 
 const baseCfg = {
   channels: {
-    qqbot: {
+    "qqbot-china": {
       enabled: true,
     },
   },
@@ -423,3 +423,4 @@ describe("QQBot fast abort queue handling", () => {
     expect(dispatchReplyWithBufferedBlockDispatcher).toHaveBeenCalledTimes(3);
   });
 });
+
